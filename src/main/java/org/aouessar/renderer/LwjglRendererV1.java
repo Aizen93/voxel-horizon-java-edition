@@ -5,9 +5,10 @@ import org.aouessar.renderer.atlas.Atlas;
 import org.aouessar.renderer.atlas.AtlasLoader;
 import org.aouessar.renderer.camera.Camera;
 import org.aouessar.renderer.camera.CameraController;
+import org.aouessar.renderer.gl.GlMeshTiled;
 import org.aouessar.renderer.gl.GlShaderProgram;
 import org.aouessar.renderer.gl.GlTexture2D;
-import org.aouessar.renderer.mesh.ChunkMesher;
+import org.aouessar.renderer.mesh.GreedyChunkMesher;
 import org.aouessar.renderer.world.BlockRenderMap;
 import org.aouessar.renderer.world.ChunkMeshCache;
 import org.aouessar.shared.EngineConfig;
@@ -56,17 +57,19 @@ public final class LwjglRendererV1 {
         Atlas atlas = new AtlasLoader().loadFromResources("/atlas.json");
         BlockRenderMap brm = new BlockRenderMap();
 
-        try (GlShaderProgram shader = new GlShaderProgram("/shaders/voxel.vert", "/shaders/voxel.frag");
+        try (GlShaderProgram shader = new GlShaderProgram("/shaders/voxel_tiled.vert", "/shaders/voxel_tiled.frag");
              GlTexture2D atlasTex = new GlTexture2D("/atlas.png");
-             ChunkMeshCache meshCache = new ChunkMeshCache()) {
+             ChunkMeshCache meshCache = new ChunkMeshCache(Math.max(1, Runtime.getRuntime().availableProcessors() - 1), 128, GlMeshTiled::new)) {
 
             shader.use();
             shader.setUniform1i("uAtlas", 0);
+            // atlas is 16x16 tiles
+            shader.setUniform2f("uTileSize", (16f / 320f), (16f / 320f));
 
             Camera camera = new Camera();
             CameraController controller = new CameraController(camera, window);
 
-            ChunkMesher mesher = new ChunkMesher();
+            GreedyChunkMesher mesher = new GreedyChunkMesher();
 
             double lastTime = glfwGetTime();
 

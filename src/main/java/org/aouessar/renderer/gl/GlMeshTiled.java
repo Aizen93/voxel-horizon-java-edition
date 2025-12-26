@@ -10,14 +10,20 @@ import static org.lwjgl.opengl.GL15.*;
 import static org.lwjgl.opengl.GL20.*;
 import static org.lwjgl.opengl.GL30.*;
 
-public final class GlMesh implements IGlMesh {
+public final class GlMeshTiled implements IGlMesh {
 
     private final int vao;
     private final int vbo;
     private final int ebo;
     private final int indexCount;
 
-    public GlMesh(MeshData mesh) {
+    public GlMeshTiled(MeshData mesh) {
+        if ((mesh.vertices.length % 7) != 0) {
+            throw new IllegalArgumentException(
+                    "GlMeshTiled expects 7 floats/vertex, got vertices.length=" + mesh.vertices.length
+            );
+        }
+
         this.indexCount = mesh.indices.length;
 
         vao = glGenVertexArrays();
@@ -26,33 +32,43 @@ public final class GlMesh implements IGlMesh {
 
         glBindVertexArray(vao);
 
-        // VBO
+        // ---------- VBO ----------
         glBindBuffer(GL_ARRAY_BUFFER, vbo);
         FloatBuffer vb = MemoryUtil.memAllocFloat(mesh.vertices.length);
         vb.put(mesh.vertices).flip();
         glBufferData(GL_ARRAY_BUFFER, vb, GL_STATIC_DRAW);
         MemoryUtil.memFree(vb);
 
-        // EBO
+        // ---------- EBO ----------
         glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo);
         IntBuffer ib = MemoryUtil.memAllocInt(mesh.indices.length);
         ib.put(mesh.indices).flip();
         glBufferData(GL_ELEMENT_ARRAY_BUFFER, ib, GL_STATIC_DRAW);
         MemoryUtil.memFree(ib);
 
-        int stride = 5 * Float.BYTES;
+        // Layout:
+        // location 0 : vec3 position
+        // location 1 : vec2 tileMin (atlas UV origin)
+        // location 2 : vec2 uvLocal (repeat space)
+        // => total = 7 floats per vertex
+        int strideBytes = 7 * Float.BYTES;
 
-        // location 0: vec3 position
+        // aPos (location=0) vec3
         glEnableVertexAttribArray(0);
-        glVertexAttribPointer(0, 3, GL_FLOAT, false, stride, 0L);
+        glVertexAttribPointer(0, 3, GL_FLOAT, false, strideBytes, 0L);
 
-        // location 1: vec2 uv
+        // aTileMin (location=1) vec2
         glEnableVertexAttribArray(1);
-        glVertexAttribPointer(1, 2, GL_FLOAT, false, stride, 3L * Float.BYTES);
+        glVertexAttribPointer(1, 2, GL_FLOAT, false, strideBytes, 3L * Float.BYTES);
+
+        // aUvLocal (location=2) vec2
+        glEnableVertexAttribArray(2);
+        glVertexAttribPointer(2, 2, GL_FLOAT, false, strideBytes, 5L * Float.BYTES);
 
         glBindVertexArray(0);
     }
 
+    @Override
     public void draw() {
         glBindVertexArray(vao);
         glDrawElements(GL_TRIANGLES, indexCount, GL_UNSIGNED_INT, 0L);

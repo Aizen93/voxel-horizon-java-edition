@@ -15,6 +15,8 @@ public final class MeshData {
     public MeshData(float[] vertices, int[] indices) {
         this.vertices = vertices;
         this.indices = indices;
+        //System.out.println("vertexCount = " + vertexCount());
+        //System.out.println("indexCount = " + indexCount());
     }
 
     public int vertexCount() {

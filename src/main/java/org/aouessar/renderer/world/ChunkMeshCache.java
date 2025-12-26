@@ -1,6 +1,7 @@
 package org.aouessar.renderer.world;
 
 import org.aouessar.renderer.gl.GlMesh;
+import org.aouessar.renderer.gl.IGlMesh;
 import org.aouessar.renderer.mesh.MeshData;
 
 import java.util.Map;
@@ -14,8 +15,13 @@ public final class ChunkMeshCache implements AutoCloseable {
         MeshData build(int cx, int cz);
     }
 
+    @FunctionalInterface
+    public interface MeshUploader {
+        IGlMesh upload(MeshData md);
+    }
+
     private static final class Entry {
-        volatile GlMesh mesh;                          // render thread only (creation/close)
+        volatile IGlMesh mesh;                         // render thread only (creation/close)
         volatile CompletableFuture<MeshData> inFlight; // worker threads
     }
 
@@ -28,8 +34,12 @@ public final class ChunkMeshCache implements AutoCloseable {
     private final int maxInFlight;
     private final AtomicInteger inFlight = new AtomicInteger(0);
 
-    public ChunkMeshCache(int workerThreads, int maxInFlight) {
+    private final MeshUploader uploader;
+
+    public ChunkMeshCache(int workerThreads, int maxInFlight, MeshUploader uploader) {
         this.maxInFlight = Math.max(1, maxInFlight);
+        this.uploader = uploader;
+
         this.executor = Executors.newFixedThreadPool(
                 Math.max(1, workerThreads),
                 r -> {
@@ -40,9 +50,9 @@ public final class ChunkMeshCache implements AutoCloseable {
         );
     }
 
-    /** Good defaults. */
+    /** Good defaults (naive pipeline). */
     public ChunkMeshCache() {
-        this(Math.max(1, Runtime.getRuntime().availableProcessors() - 1), 128);
+        this(Math.max(1, Runtime.getRuntime().availableProcessors() - 1), 128, GlMesh::new);
     }
 
     /** O(1) */
@@ -52,6 +62,14 @@ public final class ChunkMeshCache implements AutoCloseable {
 
     public int size() {
         return entries.size();
+    }
+
+    public int entryCount() { return entries.size(); }
+
+    public int meshCount() {
+        int n = 0;
+        for (Entry e : entries.values()) if (e.mesh != null) n++;
+        return n;
     }
 
     /**
@@ -69,7 +87,6 @@ public final class ChunkMeshCache implements AutoCloseable {
 
                 Entry e = entries.computeIfAbsent(key, k -> new Entry());
 
-                // If there is an async job, cancel it — we want the mesh NOW.
                 CompletableFuture<MeshData> f = e.inFlight;
                 if (f != null && !f.isDone()) {
                     f.cancel(true);
@@ -79,24 +96,14 @@ public final class ChunkMeshCache implements AutoCloseable {
                 if (e.mesh != null) continue;
 
                 MeshData md = builder.build(cx, cz);
-                if (md == null || md.isEmpty()) {
-                    continue;
-                }
+                if (md == null || md.isEmpty()) continue;
 
-                e.mesh = new GlMesh(md);
+                e.mesh = uploader.upload(md);
                 built++;
             }
         }
 
         return built;
-    }
-
-    public int entryCount() { return entries.size(); }
-
-    public int meshCount() {
-        int n = 0;
-        for (Entry e : entries.values()) if (e.mesh != null) n++;
-        return n;
     }
 
     /**
@@ -108,12 +115,10 @@ public final class ChunkMeshCache implements AutoCloseable {
         if (inFlight.get() >= maxInFlight) return;
 
         for (int r = 0; r <= radiusChunks && submitBudget > 0; r++) {
-            // top & bottom edges
             for (int dx = -r; dx <= r && submitBudget > 0; dx++) {
                 submitBudget = trySubmit(centerCx + dx, centerCz - r, submitBudget, builder);
                 if (r != 0) submitBudget = trySubmit(centerCx + dx, centerCz + r, submitBudget, builder);
             }
-            // left & right edges (excluding corners)
             for (int dz = -r + 1; dz <= r - 1 && submitBudget > 0; dz++) {
                 submitBudget = trySubmit(centerCx - r, centerCz + dz, submitBudget, builder);
                 if (r != 0) submitBudget = trySubmit(centerCx + r, centerCz + dz, submitBudget, builder);
@@ -123,7 +128,7 @@ public final class ChunkMeshCache implements AutoCloseable {
 
     /**
      * Render thread only.
-     * Upload completed MeshData into GlMesh (budgeted).
+     * Upload completed MeshData into GL mesh (budgeted).
      */
     public int uploadReady(int uploadBudget) {
         int uploaded = 0;
@@ -132,20 +137,17 @@ public final class ChunkMeshCache implements AutoCloseable {
             if (r == null) break;
 
             Entry e = entries.get(r.key);
-            if (e == null) continue; // evicted before upload
+            if (e == null) continue;
 
-            // clear inFlight marker (job done)
             e.inFlight = null;
 
             MeshData md = r.data;
-            if (md == null || md.isEmpty()) {
-                continue;
-            }
+            if (md == null || md.isEmpty()) continue;
 
-            GlMesh old = e.mesh;
+            IGlMesh old = e.mesh;
             if (old != null) old.close();
 
-            e.mesh = new GlMesh(md);
+            e.mesh = uploader.upload(md);
             uploaded++;
         }
         return uploaded;
@@ -153,7 +155,7 @@ public final class ChunkMeshCache implements AutoCloseable {
 
     public void drawAll() {
         for (Entry e : entries.values()) {
-            GlMesh m = e.mesh;
+            IGlMesh m = e.mesh;
             if (m != null) m.draw();
         }
     }
@@ -175,13 +177,11 @@ public final class ChunkMeshCache implements AutoCloseable {
 
             Entry e = me.getValue();
 
-            GlMesh m = e.mesh;
+            IGlMesh m = e.mesh;
             if (m != null) m.close();
 
             CompletableFuture<MeshData> f = e.inFlight;
-            if (f != null && !f.isDone()) {
-                f.cancel(true);
-            }
+            if (f != null && !f.isDone()) f.cancel(true);
 
             it.remove();
         }
@@ -198,7 +198,6 @@ public final class ChunkMeshCache implements AutoCloseable {
         CompletableFuture<MeshData> existing = e.inFlight;
         if (existing != null && !existing.isDone()) return submitBudget;
 
-        // reserve a slot *before* submitting
         if (inFlight.incrementAndGet() > maxInFlight) {
             inFlight.decrementAndGet();
             return submitBudget;
@@ -209,7 +208,6 @@ public final class ChunkMeshCache implements AutoCloseable {
 
         fut.whenComplete((md, ex) -> {
             inFlight.decrementAndGet();
-
             if (fut.isCancelled() || ex != null) return;
             readyQueue.add(new Ready(key, md));
         });
@@ -220,7 +218,7 @@ public final class ChunkMeshCache implements AutoCloseable {
     @Override
     public void close() {
         for (Entry e : entries.values()) {
-            GlMesh m = e.mesh;
+            IGlMesh m = e.mesh;
             if (m != null) m.close();
 
             CompletableFuture<MeshData> f = e.inFlight;
@@ -228,7 +226,6 @@ public final class ChunkMeshCache implements AutoCloseable {
         }
         entries.clear();
         readyQueue.clear();
-
         executor.shutdownNow();
     }
 }
