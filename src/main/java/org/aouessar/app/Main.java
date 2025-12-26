@@ -29,6 +29,6 @@ public final class Main {
         ChunkProvider chunkProvider = new RegionStreamingService(seed, pipeline);
 
         // Renderer v1 (near-field)
-        new LwjglRendererV1(chunkProvider, 32).run();
+        new LwjglRendererV1(chunkProvider, 24).run();
     }
 }
