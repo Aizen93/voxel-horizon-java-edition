@@ -1,0 +1,1 @@
+rootProject.name = "voxel-horizon-java-edition"
