@@ -8,9 +8,11 @@ uniform mat4 uMVP;
 
 out vec2 vTileMin;
 out vec2 vUvLocal;
+out vec3 vWorldPos;
 
 void main() {
     vTileMin = aTileMin;
     vUvLocal = aUvLocal;
+    vWorldPos = aPos;                  // world-space position (as built by mesher)
     gl_Position = uMVP * vec4(aPos, 1.0);
 }

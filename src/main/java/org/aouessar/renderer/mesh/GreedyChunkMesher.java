@@ -96,8 +96,16 @@ public final class GreedyChunkMesher {
                 for (x[w] = 0; x[w] < dwDim; x[w]++) {
                     for (x[u] = 0; x[u] < duDim; x[u]++) {
 
-                        short a = sample(accessor, baseWx, baseWz, x[0], x[1], x[2]);
-                        short b = sample(accessor, baseWx, baseWz, x[0] + q[0], x[1] + q[1], x[2] + q[2]);
+                        int awx = baseWx + x[0];
+                        int awy = x[1];
+                        int awz = baseWz + x[2];
+
+                        int bwx = baseWx + x[0] + q[0];
+                        int bwy = x[1] + q[1];
+                        int bwz = baseWz + x[2] + q[2];
+
+                        short a = sampleForGreedy(accessor, awx, awy, awz);
+                        short b = sampleForGreedy(accessor, bwx, bwy, bwz);
 
                         if (a != Blocks.AIR && isFaceVisible(a, b)) {
                             // a -> b : face points in +d direction
@@ -192,6 +200,8 @@ public final class GreedyChunkMesher {
                 }
             }
         }
+
+        emitBillboards(accessor, atlas, blockRenderMap, baseWx, baseWz, cs, h, cutout);
 
         return new ChunkMeshes(
                 opaque.toMesh(),
@@ -432,5 +442,102 @@ public final class GreedyChunkMesher {
             i = Arrays.copyOf(i, newLen);
         }
         return new GrowResult(v, i);
+    }
+
+    private static boolean isBillboard(short blockId) {
+        return blockId == Blocks.BUSH; // extend later
+    }
+
+    private static short sampleForGreedy(BlockAccessor accessor, int wx, int wy, int wz) {
+        short id = accessor.blockAtWorld(wx, wy, wz);
+        // Billboards are not voxel geometry: treat as AIR for greedy face generation
+        return isBillboard(id) ? Blocks.AIR : id;
+    }
+
+    private static void emitBillboards(
+            BlockAccessor accessor,
+            Atlas atlas,
+            BlockRenderMap blockRenderMap,
+            int baseWx,
+            int baseWz,
+            int cs,
+            int h,
+            Buf cutout
+    ) {
+        // Use the “top” face mapping for plants (usually same tile for all anyway)
+        final int tileFace = Face.PY;
+
+        for (int lz = 0; lz < cs; lz++) {
+            int wz = baseWz + lz;
+            for (int lx = 0; lx < cs; lx++) {
+                int wx = baseWx + lx;
+
+                for (int wy = EngineConfig.MIN_Y; wy < EngineConfig.MIN_Y + h; wy++) {
+                    short id = accessor.blockAtWorld(wx, wy, wz);
+                    if (!isBillboard(id)) continue;
+
+                    // Atlas tile (same mechanism as cubes)
+                    Atlas.UvRect uv = atlas.uv(blockRenderMap.tileName(id, tileFace));
+                    float tileMinU = uv.u0();
+                    float tileMinV = uv.v0();
+
+                    // 2 crossed quads, double-sided => 4 quads total
+                    cutout.ensure(4);
+
+                    // World-space block corner
+                    float x0 = wx;
+                    float y0 = wy;
+                    float z0 = wz;
+
+                    float y1 = y0 + 1f;
+
+                    // Center of the block footprint
+                    float cx = x0 + 0.5f;
+                    float cz = z0 + 0.5f;
+
+                    // Half width from center to edge (0.5 = exactly block width)
+                    float r = 0.5f;
+
+                    // Quad A (diagonal)
+                    emitBillboardQuadDoubleSided(cutout,
+                            cx - r, y0, cz - r,
+                            cx + r, y1, cz + r,
+                            tileMinU, tileMinV);
+
+                    // Quad B (other diagonal)
+                    emitBillboardQuadDoubleSided(cutout,
+                            cx - r, y0, cz + r,
+                            cx + r, y1, cz - r,
+                            tileMinU, tileMinV);
+                }
+            }
+        }
+    }
+
+    private static void emitBillboardQuadDoubleSided(
+            Buf target,
+            float xA, float y0, float zA,
+            float xB, float y1, float zB,
+            float tileMinU, float tileMinV
+    ) {
+        // First side (winding 0-1-2, 2-3-0)
+        int base0 = target.vCount;
+
+        put(target.v, target.vCount++, xA, y0, zA, tileMinU, tileMinV, 0f, 0f);
+        put(target.v, target.vCount++, xB, y0, zB, tileMinU, tileMinV, 1f, 0f);
+        put(target.v, target.vCount++, xB, y1, zB, tileMinU, tileMinV, 1f, 1f);
+        put(target.v, target.vCount++, xA, y1, zA, tileMinU, tileMinV, 0f, 1f);
+
+        target.iCount = emitIndices(target.i, target.iCount, base0, false);
+
+        // Second side (reverse winding) – simplest, robust, no renderer-state assumptions
+        int base1 = target.vCount;
+
+        put(target.v, target.vCount++, xA, y0, zA, tileMinU, tileMinV, 0f, 0f);
+        put(target.v, target.vCount++, xA, y1, zA, tileMinU, tileMinV, 0f, 1f);
+        put(target.v, target.vCount++, xB, y1, zB, tileMinU, tileMinV, 1f, 1f);
+        put(target.v, target.vCount++, xB, y0, zB, tileMinU, tileMinV, 1f, 0f);
+
+        target.iCount = emitIndices(target.i, target.iCount, base1, false);
     }
 }

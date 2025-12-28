@@ -49,7 +49,7 @@ public final class GlShaderProgram implements AutoCloseable {
 
     public void setUniform1i(String name, int v) {
         int loc = glGetUniformLocation(programId, name);
-        if (loc < 0) throw new IllegalStateException("Uniform not found: " + name);
+        //if (loc < 0) throw new IllegalStateException("Uniform not found: " + name);
         glUniform1i(loc, v);
     }
 
@@ -100,9 +100,9 @@ public final class GlShaderProgram implements AutoCloseable {
 
     public void setUniform2f(String name, float x, float y) {
         int loc = glGetUniformLocation(programId, name);
-        if (loc < 0) {
+        /*if (loc < 0) {
             throw new IllegalStateException("Uniform not found: " + name);
-        }
+        }*/
         glUniform2f(loc, x, y);
     }
 
