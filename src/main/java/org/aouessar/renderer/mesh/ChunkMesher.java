@@ -191,12 +191,22 @@ public final class ChunkMesher {
         }
 
         // Compute face normal from first triangle (base, base+1, base+2)
-        float ax = v[base * 5],     ay = v[base * 5 + 1],     az = v[base * 5 + 2];
-        float bx = v[(base + 1) * 5], by = v[(base + 1) * 5 + 1], bz = v[(base + 1) * 5 + 2];
-        float cx = v[(base + 2) * 5], cy = v[(base + 2) * 5 + 1], cz = v[(base + 2) * 5 + 2];
+        float ax = v[base * 5];
+        float ay = v[base * 5 + 1];
+        float az = v[base * 5 + 2];
+        float bx = v[(base + 1) * 5];
+        float by = v[(base + 1) * 5 + 1];
+        float bz = v[(base + 1) * 5 + 2];
+        float cx = v[(base + 2) * 5];
+        float cy = v[(base + 2) * 5 + 1];
+        float cz = v[(base + 2) * 5 + 2];
 
-        float abx = bx - ax, aby = by - ay, abz = bz - az;
-        float acx = cx - ax, acy = cy - ay, acz = cz - az;
+        float abx = bx - ax;
+        float aby = by - ay;
+        float abz = bz - az;
+        float acx = cx - ax;
+        float acy = cy - ay;
+        float acz = cz - az;
 
         // normal = AB x AC
         float nx = aby * acz - abz * acy;
@@ -204,7 +214,10 @@ public final class ChunkMesher {
         float nz = abx * acy - aby * acx;
 
         // Expected outward normal for the face
-        float ex = 0, ey = 0, ez = 0;
+        float ex = 0;
+        float ey = 0;
+        float ez = 0;
+
         switch (face) {
             case Face.PX -> ex = 1;
             case Face.NX -> ex = -1;
@@ -212,6 +225,7 @@ public final class ChunkMesher {
             case Face.NY -> ey = -1;
             case Face.PZ -> ez = 1;
             case Face.NZ -> ez = -1;
+            default -> throw new IllegalStateException("Unexpected value: " + face);
         }
 
         // If dot(normal, expected) < 0, winding is backwards => flip indices
@@ -232,20 +246,20 @@ public final class ChunkMesher {
     private static int emitIndices(int[] idx, int iCount, int baseVertex, boolean flip) {
         if (!flip) {
             // CCW
-            idx[iCount++] = baseVertex + 0;
+            idx[iCount++] = baseVertex;
             idx[iCount++] = baseVertex + 1;
             idx[iCount++] = baseVertex + 2;
 
             idx[iCount++] = baseVertex + 2;
             idx[iCount++] = baseVertex + 3;
-            idx[iCount++] = baseVertex + 0;
+            idx[iCount++] = baseVertex;
         } else {
             // CW -> flip to CCW by swapping winding
-            idx[iCount++] = baseVertex + 0;
+            idx[iCount++] = baseVertex;
             idx[iCount++] = baseVertex + 2;
             idx[iCount++] = baseVertex + 1;
 
-            idx[iCount++] = baseVertex + 0;
+            idx[iCount++] = baseVertex;
             idx[iCount++] = baseVertex + 3;
             idx[iCount++] = baseVertex + 2;
         }

@@ -45,6 +45,7 @@ public final class CameraController {
         }
 
         float spd = moveSpeed * dt;
+        if (glfwGetKey(window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS) spd *= 2.5f;
 
         var forward = camera.forwardDir();
         var right = camera.rightDir();
@@ -55,6 +56,6 @@ public final class CameraController {
         if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS) camera.position.fma(-spd, right);
 
         if (glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_PRESS) camera.position.y += spd;
-        if (glfwGetKey(window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS) camera.position.y -= spd;
+        if (glfwGetKey(window, GLFW_KEY_LEFT_CONTROL) == GLFW_PRESS) camera.position.y -= spd;
     }
 }

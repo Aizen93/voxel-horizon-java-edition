@@ -18,6 +18,9 @@ public final class GlMeshTiled implements IGlMesh {
     private final int indexCount;
 
     public GlMeshTiled(MeshData mesh) {
+        final int STRIDE_FLOATS = 7;
+        int strideBytes = STRIDE_FLOATS * Float.BYTES;
+
         if ((mesh.vertices.length % 7) != 0) {
             throw new IllegalArgumentException(
                     "GlMeshTiled expects 7 floats/vertex, got vertices.length=" + mesh.vertices.length
@@ -50,8 +53,7 @@ public final class GlMeshTiled implements IGlMesh {
         // location 0 : vec3 position
         // location 1 : vec2 tileMin (atlas UV origin)
         // location 2 : vec2 uvLocal (repeat space)
-        // => total = 7 floats per vertex
-        int strideBytes = 7 * Float.BYTES;
+        // => total = 7 floats per vertex stride
 
         // aPos (location=0) vec3
         glEnableVertexAttribArray(0);

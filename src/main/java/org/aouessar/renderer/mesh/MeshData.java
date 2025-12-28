@@ -2,10 +2,8 @@ package org.aouessar.renderer.mesh;
 
 /**
  * CPU-side mesh buffers.
- *
  * Vertex layout (float):
- *   [x, y, z, u, v]  -> 5 floats per vertex
- *
+ *   [x, y, z, u, v...]  -> 7 floats per vertex
  * Indices are 32-bit (int).
  */
 public final class MeshData {
@@ -15,8 +13,6 @@ public final class MeshData {
     public MeshData(float[] vertices, int[] indices) {
         this.vertices = vertices;
         this.indices = indices;
-        //System.out.println("vertexCount = " + vertexCount());
-        //System.out.println("indexCount = " + indexCount());
     }
 
     public int vertexCount() {

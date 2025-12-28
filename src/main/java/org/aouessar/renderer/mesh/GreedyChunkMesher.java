@@ -345,18 +345,30 @@ public final class GreedyChunkMesher {
         }
 
         // Compute face normal from positions of first triangle (base, base+1, base+2)
-        float ax = v[base * 7],         ay = v[base * 7 + 1],         az = v[base * 7 + 2];
-        float bx = v[(base + 1) * 7],   by = v[(base + 1) * 7 + 1],   bz = v[(base + 1) * 7 + 2];
-        float cx = v[(base + 2) * 7],   cy = v[(base + 2) * 7 + 1],   cz = v[(base + 2) * 7 + 2];
+        float ax = v[base * 7];
+        float ay = v[base * 7 + 1];
+        float az = v[base * 7 + 2];
+        float bx = v[(base + 1) * 7];
+        float by = v[(base + 1) * 7 + 1];
+        float bz = v[(base + 1) * 7 + 2];
+        float cx = v[(base + 2) * 7];
+        float cy = v[(base + 2) * 7 + 1];
+        float cz = v[(base + 2) * 7 + 2];
 
-        float abx = bx - ax, aby = by - ay, abz = bz - az;
-        float acx = cx - ax, acy = cy - ay, acz = cz - az;
+        float abx = bx - ax;
+        float aby = by - ay;
+        float abz = bz - az;
+        float acx = cx - ax;
+        float acy = cy - ay;
+        float acz = cz - az;
 
         float nx = aby * acz - abz * acy;
         float ny = abz * acx - abx * acz;
         float nz = abx * acy - aby * acx;
 
-        float ex = 0, ey = 0, ez = 0;
+        float ex = 0;
+        float ey = 0;
+        float ez = 0;
         switch (face) {
             case Face.PX -> ex = 1;
             case Face.NX -> ex = -1;
@@ -364,6 +376,7 @@ public final class GreedyChunkMesher {
             case Face.NY -> ey = -1;
             case Face.PZ -> ez = 1;
             case Face.NZ -> ez = -1;
+            default -> throw new IllegalStateException("Unexpected value: " + face);
         }
 
         boolean flip = (nx * ex + ny * ey + nz * ez) < 0f;
@@ -407,19 +420,19 @@ public final class GreedyChunkMesher {
 
     private static int emitIndices(int[] idx, int iCount, int baseVertex, boolean flip) {
         if (!flip) {
-            idx[iCount++] = baseVertex + 0;
+            idx[iCount++] = baseVertex;
             idx[iCount++] = baseVertex + 1;
             idx[iCount++] = baseVertex + 2;
 
             idx[iCount++] = baseVertex + 2;
             idx[iCount++] = baseVertex + 3;
-            idx[iCount++] = baseVertex + 0;
+            idx[iCount++] = baseVertex;
         } else {
-            idx[iCount++] = baseVertex + 0;
+            idx[iCount++] = baseVertex;
             idx[iCount++] = baseVertex + 2;
             idx[iCount++] = baseVertex + 1;
 
-            idx[iCount++] = baseVertex + 0;
+            idx[iCount++] = baseVertex;
             idx[iCount++] = baseVertex + 3;
             idx[iCount++] = baseVertex + 2;
         }
@@ -485,28 +498,24 @@ public final class GreedyChunkMesher {
                     cutout.ensure(4);
 
                     // World-space block corner
-                    float x0 = wx;
-                    float y0 = wy;
-                    float z0 = wz;
-
-                    float y1 = y0 + 1f;
+                    float y1 = wy + 1f;
 
                     // Center of the block footprint
-                    float cx = x0 + 0.5f;
-                    float cz = z0 + 0.5f;
+                    float cx = wx + 0.5f;
+                    float cz = wz + 0.5f;
 
                     // Half width from center to edge (0.5 = exactly block width)
                     float r = 0.5f;
 
                     // Quad A (diagonal)
                     emitBillboardQuadDoubleSided(cutout,
-                            cx - r, y0, cz - r,
+                            cx - r, wy, cz - r,
                             cx + r, y1, cz + r,
                             tileMinU, tileMinV);
 
                     // Quad B (other diagonal)
                     emitBillboardQuadDoubleSided(cutout,
-                            cx - r, y0, cz + r,
+                            cx - r, wy, cz + r,
                             cx + r, y1, cz - r,
                             tileMinU, tileMinV);
                 }
