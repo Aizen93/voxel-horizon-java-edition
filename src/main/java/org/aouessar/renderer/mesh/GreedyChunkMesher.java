@@ -2,6 +2,7 @@ package org.aouessar.renderer.mesh;
 
 import org.aouessar.core.api.ChunkProvider;
 import org.aouessar.core.world.Blocks;
+import org.aouessar.core.world.RenderLayer;
 import org.aouessar.renderer.atlas.Atlas;
 import org.aouessar.renderer.world.BlockRenderMap;
 import org.aouessar.shared.EngineConfig;
@@ -14,7 +15,39 @@ public final class GreedyChunkMesher {
     private record FaceEmit(int newVertexCount, boolean flip) {}
     private record GrowResult(float[] v, int[] i) {}
 
-    public MeshData buildChunkMesh(
+    /**
+     * 3 mesh outputs so the renderer can draw in 3 passes:
+     * - opaque first
+     * - cutout second (alpha discard, depth write ON)
+     * - translucent last (blending, depth write OFF)
+     */
+    public record ChunkMeshes(MeshData opaque, MeshData cutout, MeshData translucent) {}
+
+    private static final class Buf {
+        float[] v;
+        int[] i;
+        int vCount;
+        int iCount;
+
+        Buf(int initialQuads) {
+            this.v = new float[STRIDE * 4 * initialQuads];
+            this.i = new int[6 * initialQuads];
+        }
+
+        void ensure(int addQuads) {
+            var grow = ensureCapacity(v, i, vCount, iCount, addQuads);
+            v = grow.v;
+            i = grow.i;
+        }
+
+        MeshData toMesh() {
+            float[] outV = Arrays.copyOf(v, vCount * STRIDE);
+            int[] outI   = Arrays.copyOf(i, iCount);
+            return new MeshData(outV, outI);
+        }
+    }
+
+    public ChunkMeshes buildChunkMeshes(
             ChunkProvider chunkProvider,
             Atlas atlas,
             BlockRenderMap blockRenderMap,
@@ -27,11 +60,10 @@ public final class GreedyChunkMesher {
         final int baseWx = cx * cs;
         final int baseWz = cz * cs;
 
-        // Dynamic buffers
-        float[] v = new float[STRIDE * 4 * 2048];
-        int[]   i = new int[6 * 2048];
-        int vCount = 0;
-        int iCount = 0;
+        // 3 dynamic buffers
+        Buf opaque = new Buf(2048);
+        Buf cutout = new Buf(1024);
+        Buf translucent = new Buf(1024);
 
         BlockAccessor accessor = new BlockAccessor(chunkProvider);
 
@@ -67,16 +99,12 @@ public final class GreedyChunkMesher {
                         short a = sample(accessor, baseWx, baseWz, x[0], x[1], x[2]);
                         short b = sample(accessor, baseWx, baseWz, x[0] + q[0], x[1] + q[1], x[2] + q[2]);
 
-                        // EXACT naive rule: only AIR is empty
-                        boolean aAir = (a == Blocks.AIR);
-                        boolean bAir = (b == Blocks.AIR);
-
-                        if (!aAir && bAir) {
-                            // solid -> air : face points in +d direction
+                        if (a != Blocks.AIR && isFaceVisible(a, b)) {
+                            // a -> b : face points in +d direction
                             int face = faceFor(d, true);
                             mask[n++] = pack(a, face);
-                        } else if (aAir && !bAir) {
-                            // air -> solid : face points in -d direction
+                        } else if (b != Blocks.AIR && isFaceVisible(b, a)) {
+                            // b -> a : face points in -d direction
                             int face = faceFor(d, false);
                             mask[n++] = pack(b, face);
                         } else {
@@ -111,16 +139,21 @@ public final class GreedyChunkMesher {
                         short blockId = unpackBlockId(c);
                         int face = unpackFace(c);
 
+                        // Choose which mesh buffer receives this quad
+                        Buf target = switch (Blocks.getRenderLayer(blockId)) {
+                            case OPAQUE -> opaque;
+                            case CUTOUT -> cutout;
+                            case TRANSLUCENT -> translucent;
+                        };
+
                         // We have a rectangle in (u,w) of size (width,height) on slice plane x[d]
                         // Convert to local chunk coords:
                         int[] p = new int[]{ x[0], x[1], x[2] };
                         p[u] = iu;
                         p[w] = jw;
 
-                        // plane coordinate along d:
-                        // If face points +d, the visible face is at coord (x[d] + 1)
-                        // If face points -d, the visible face is at coord (x[d] + 0)
-
+                        // Visible face plane coordinate:
+                        // For +d faces, visible face is at x[d] + 1
                         p[d] = x[d] + 1;
 
                         // du and dw vectors in local coords
@@ -130,7 +163,6 @@ public final class GreedyChunkMesher {
                         dw[w] = height;
 
                         // Convert local corner ranges to world-space block bounds:
-                        // x-range is [pX, pX+duX+dwX] etc.
                         int x0 = baseWx + p[0];
                         int y0 = p[1];
                         int z0 = baseWz + p[2];
@@ -139,14 +171,14 @@ public final class GreedyChunkMesher {
                         int y1 = y0 + du[1] + dw[1];
                         int z1 = z0 + du[2] + dw[2];
 
-                        var grow = ensureCapacity(v, i, vCount, iCount, 1);
-                        v = grow.v; i = grow.i;
+                        target.ensure(1);
 
-                        int base = vCount;
+                        int base = target.vCount;
+
                         Atlas.UvRect uv = atlas.uv(blockRenderMap.tileName(blockId, face));
-                        var fe = emitRectFace(v, vCount, x0, y0, z0, x1, y1, z1, face, uv);
-                        vCount = fe.newVertexCount();
-                        iCount = emitIndices(i, iCount, base, fe.flip());
+                        var fe = emitRectFace(target.v, target.vCount, x0, y0, z0, x1, y1, z1, face, blockId, uv);
+                        target.vCount = fe.newVertexCount();
+                        target.iCount = emitIndices(target.i, target.iCount, base, fe.flip());
 
                         // clear mask area
                         for (int hh = 0; hh < height; hh++) {
@@ -161,9 +193,37 @@ public final class GreedyChunkMesher {
             }
         }
 
-        float[] outV = Arrays.copyOf(v, vCount * STRIDE);
-        int[] outI   = Arrays.copyOf(i, iCount);
-        return new MeshData(outV, outI);
+        return new ChunkMeshes(
+                opaque.toMesh(),
+                cutout.toMesh(),
+                translucent.toMesh()
+        );
+    }
+
+    /**
+     * Face visibility rules for 3-pass rendering:
+     * - neighbor OPAQUE hides faces behind it
+     * - CUTOUT does NOT hide (so you can see behind leaf/bush holes)
+     * - TRANSLUCENT hides only if both are translucent AND same blockId (water-water, glass-glass internal faces)
+     */
+    private static boolean isFaceVisible(short self, short neighbor) {
+        if (neighbor == Blocks.AIR) return true;
+
+        var selfLayer = Blocks.getRenderLayer(self);
+        var otherLayer = Blocks.getRenderLayer(neighbor);
+
+        // Internal faces inside the same translucent material (water-water, glass-glass)
+        if (selfLayer == RenderLayer.TRANSLUCENT &&
+                otherLayer == RenderLayer.TRANSLUCENT &&
+                self == neighbor) {
+            return false;
+        }
+
+        // Opaque blocks occlude faces behind them
+        if (otherLayer == RenderLayer.OPAQUE) return false;
+
+        // Otherwise visible (against cutout or translucent or different translucent type)
+        return true;
     }
 
     private static short sample(BlockAccessor accessor, int baseWx, int baseWz, int lx, int ly, int lz) {
@@ -202,32 +262,21 @@ public final class GreedyChunkMesher {
     // Emission
     // -----------------------------
 
-    /**
-     * Emit a rectangular face using the SAME vertex layouts as ChunkMesher.emitFace,
-     * but with variable extents.
-     *
-     * Coordinates are integer world coords (block grid). x1/y1/z1 are "max" corners.
-     * This emits 4 vertices and returns (newVertexCount, flip) exactly like ChunkMesher.
-     */
     private static FaceEmit emitRectFace(
             float[] v,
             int vertexCount,
             int x0, int y0, int z0,
             int x1, int y1, int z1,
             int face,
+            short blockId,
             Atlas.UvRect uv
     ) {
-        // tileMin in atlas UV space
-        // IMPORTANT: keep your validated V convention:
-        // tileMinV uses uv.v1() (because you previously flipped V)
         float tileMinU = uv.u0();
         float tileMinV = uv.v0();
 
-        // How many 1x1 blocks the greedy rect spans in "U" and "V" directions
         int uBlocks = faceUBlocks(face, x0, y0, z0, x1, y1, z1);
         int vBlocks = faceVBlocks(face, x0, y0, z0, x1, y1, z1);
 
-        // local repeat UV (0..uBlocks, 0..vBlocks)
         float lu0 = 0f;
         float lv0 = 0f;
         float lu1 = uBlocks;
@@ -241,10 +290,6 @@ public final class GreedyChunkMesher {
 
         int base = vertexCount;
 
-        // Same vertex layouts as your working ChunkMesher.emitFace, just stretched to x0/x1 etc.
-        // UVs:
-        // - tileMinU/tileMinV per vertex (same for all 4)
-        // - local u/v differs per corner to create repeat
         switch (face) {
             case Face.PX -> {
                 put(v, vertexCount++, x1, y0, z0, tileMinU, tileMinV, lu0, lv0);
@@ -259,10 +304,14 @@ public final class GreedyChunkMesher {
                 put(v, vertexCount++, x0, y1, z1, tileMinU, tileMinV, lu0, lv1);
             }
             case Face.PY -> {
-                put(v, vertexCount++, x0, y1, z0, tileMinU, tileMinV, lu0, lv0);
-                put(v, vertexCount++, x1, y1, z0, tileMinU, tileMinV, lu1, lv0);
-                put(v, vertexCount++, x1, y1, z1, tileMinU, tileMinV, lu1, lv1);
-                put(v, vertexCount++, x0, y1, z1, tileMinU, tileMinV, lu0, lv1);
+                float y = y1;
+                if (blockId == Blocks.WATER) {
+                    y = y1 - 0.1f; // tweak: 0.85–0.92 feels good
+                }
+                put(v, vertexCount++, x0, y, z0, tileMinU, tileMinV, lu0, lv0);
+                put(v, vertexCount++, x1, y, z0, tileMinU, tileMinV, lu1, lv0);
+                put(v, vertexCount++, x1, y, z1, tileMinU, tileMinV, lu1, lv1);
+                put(v, vertexCount++, x0, y, z1, tileMinU, tileMinV, lu0, lv1);
             }
             case Face.NY -> {
                 put(v, vertexCount++, x0, y0, z1, tileMinU, tileMinV, lu0, lv0);
@@ -286,7 +335,6 @@ public final class GreedyChunkMesher {
         }
 
         // Compute face normal from positions of first triangle (base, base+1, base+2)
-        // NOTE: stride is now 7 floats per vertex
         float ax = v[base * 7],         ay = v[base * 7 + 1],         az = v[base * 7 + 2];
         float bx = v[(base + 1) * 7],   by = v[(base + 1) * 7 + 1],   bz = v[(base + 1) * 7 + 2];
         float cx = v[(base + 2) * 7],   cy = v[(base + 2) * 7 + 1],   cz = v[(base + 2) * 7 + 2];
@@ -312,21 +360,20 @@ public final class GreedyChunkMesher {
         return new FaceEmit(vertexCount, flip);
     }
 
-
     private static int faceUBlocks(int face, int x0, int y0, int z0, int x1, int y1, int z1) {
         return switch (face) {
-            case Face.PX, Face.NX -> (z1 - z0); // U along Z
-            case Face.PZ, Face.NZ -> (x1 - x0); // U along X
-            case Face.PY, Face.NY -> (x1 - x0); // U along X
+            case Face.PX, Face.NX -> (z1 - z0);
+            case Face.PZ, Face.NZ -> (x1 - x0);
+            case Face.PY, Face.NY -> (x1 - x0);
             default -> 1;
         };
     }
 
     private static int faceVBlocks(int face, int x0, int y0, int z0, int x1, int y1, int z1) {
         return switch (face) {
-            case Face.PX, Face.NX -> (y1 - y0); // V along Y
-            case Face.PZ, Face.NZ -> (y1 - y0); // V along Y
-            case Face.PY, Face.NY -> (z1 - z0); // V along Z
+            case Face.PX, Face.NX -> (y1 - y0);
+            case Face.PZ, Face.NZ -> (y1 - y0);
+            case Face.PY, Face.NY -> (z1 - z0);
             default -> 1;
         };
     }
@@ -373,7 +420,6 @@ public final class GreedyChunkMesher {
         int addVerts = addQuads * 4;
         int addIdx   = addQuads * 6;
 
-        // stride is now 7 floats per vertex
         int neededV = (vCount + addVerts) * 7;
         int neededI = (iCount + addIdx);
 

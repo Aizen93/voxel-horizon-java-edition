@@ -4,6 +4,8 @@ import org.aouessar.renderer.gl.GlMesh;
 import org.aouessar.renderer.gl.IGlMesh;
 import org.aouessar.renderer.mesh.MeshData;
 
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.Map;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -26,6 +28,7 @@ public final class ChunkMeshCache implements AutoCloseable {
     }
 
     private record Ready(long key, MeshData data) {}
+    private record DrawItem(IGlMesh mesh, float d2) {}
 
     private final ConcurrentHashMap<Long, Entry> entries = new ConcurrentHashMap<>();
     private final ConcurrentLinkedQueue<Ready> readyQueue = new ConcurrentLinkedQueue<>();
@@ -227,5 +230,85 @@ public final class ChunkMeshCache implements AutoCloseable {
         entries.clear();
         readyQueue.clear();
         executor.shutdownNow();
+    }
+
+    /**
+     * Render thread only (intended usage).
+     * Inject a pre-built MeshData into this cache so it will be uploaded by uploadReady().
+     * This DOES NOT schedule worker jobs and DOES NOT touch the inFlight counter.
+     */
+    public void requestOne(int cx, int cz, MeshData mesh) {
+        if (mesh == null || mesh.isEmpty()) return;
+
+        long key = ChunkKey.pack(cx, cz);
+
+        // Ensure entry exists so draw/evict bookkeeping works
+        Entry e = entries.computeIfAbsent(key, k -> new Entry());
+
+        // If there is some stale inFlight future, cancel it (should not happen for side caches,
+        // but this makes the method safe to call in all cases).
+        CompletableFuture<MeshData> f = e.inFlight;
+        if (f != null && !f.isDone()) {
+            f.cancel(true);
+        }
+        e.inFlight = null;
+
+        // Enqueue for GL upload (actual upload happens on render thread in uploadReady()).
+        readyQueue.add(new Ready(key, mesh));
+    }
+
+    /**
+     * Render thread only.
+     * Ensure entries exist for all chunks in radius so:
+     * - evictOutside() keeps them alive
+     * - requestOne() can safely enqueue uploads for them
+     * NOTE: This does not schedule builds; it only "touches" the cache geometry.
+     */
+    public void touchRadius(int centerCx, int centerCz, int radiusChunks) {
+        for (int dz = -radiusChunks; dz <= radiusChunks; dz++) {
+            for (int dx = -radiusChunks; dx <= radiusChunks; dx++) {
+                int cx = centerCx + dx;
+                int cz = centerCz + dz;
+
+                long key = ChunkKey.pack(cx, cz);
+                entries.computeIfAbsent(key, k -> new Entry());
+            }
+        }
+    }
+
+    /**
+     * Render thread only.
+     * Draw meshes sorted back-to-front (far -> near) relative to camera X/Z.
+     * Intended for TRANSLUCENT pass.
+     */
+    public void drawSorted(float camX, float camZ) {
+        // Collect visible meshes (avoid allocating too much: capacity ~ entries.size())
+        ArrayList<DrawItem> list = new ArrayList<>(entries.size());
+
+        for (var me : entries.entrySet()) {
+            Entry e = me.getValue();
+            IGlMesh m = e.mesh;
+            if (m == null) continue;
+
+            long key = me.getKey();
+            int cx = ChunkKey.unpackX(key);
+            int cz = ChunkKey.unpackZ(key);
+
+            // chunk center in world space (x/z). Use 0.5 to center the chunk.
+            // We don't know CHUNK_SIZE here; but you can derive it if you want.
+            // Since cx/cz are in chunk coords, distance in chunk units is fine for sorting.
+            float dx = (cx + 0.5f) - camX;
+            float dz = (cz + 0.5f) - camZ;
+            float d2 = dx * dx + dz * dz;
+
+            list.add(new DrawItem(m, d2));
+        }
+
+        // Far -> near
+        list.sort(Comparator.comparingDouble(DrawItem::d2).reversed());
+
+        for (DrawItem it : list) {
+            it.mesh.draw();
+        }
     }
 }

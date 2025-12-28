@@ -23,7 +23,6 @@ public final class LwjglRendererV1 {
     private final ChunkProvider chunkProvider;
     private final int radius; // view radius in chunks
 
-
     // Keep a little hysteresis to avoid eviction thrashing
     private final int evictRadius;
 
@@ -57,14 +56,29 @@ public final class LwjglRendererV1 {
         Atlas atlas = new AtlasLoader().loadFromResources("/atlas.json");
         BlockRenderMap brm = new BlockRenderMap();
 
-        try (GlShaderProgram shader = new GlShaderProgram("/shaders/voxel_tiled.vert", "/shaders/voxel_tiled.frag");
-             GlTexture2D atlasTex = new GlTexture2D("/atlas.png");
-             ChunkMeshCache meshCache = new ChunkMeshCache(Math.max(1, Runtime.getRuntime().availableProcessors() - 1), 128, GlMeshTiled::new)) {
+        try (
+                GlShaderProgram shader = new GlShaderProgram("/shaders/voxel_tiled.vert", "/shaders/voxel_tiled.frag");
+                GlShaderProgram shaderTranslucent = new GlShaderProgram("/shaders/voxel_tiled.vert", "/shaders/voxel_tiled_translucent.frag");
+                GlShaderProgram shaderCutout = new GlShaderProgram("/shaders/voxel_tiled.vert", "/shaders/voxel_tiled_cutout.frag");
+                GlTexture2D atlasTex = new GlTexture2D("/atlas.png");
 
+                // 3 caches: opaque, cutout, translucent
+                ChunkMeshCache opaqueCache = new ChunkMeshCache(Math.max(1, Runtime.getRuntime().availableProcessors() - 1), 128, GlMeshTiled::new);
+                ChunkMeshCache cutoutCache = new ChunkMeshCache(Math.max(1, Runtime.getRuntime().availableProcessors() - 1), 128, GlMeshTiled::new);
+                ChunkMeshCache translucentCache = new ChunkMeshCache(Math.max(1, Runtime.getRuntime().availableProcessors() - 1), 128, GlMeshTiled::new)
+        ) {
+            // Common uniforms
             shader.use();
             shader.setUniform1i("uAtlas", 0);
-            // atlas is 16x16 tiles
             shader.setUniform2f("uTileSize", (16f / 320f), (16f / 320f));
+
+            shaderCutout.use();
+            shaderCutout.setUniform1i("uAtlas", 0);
+            shaderCutout.setUniform2f("uTileSize", (16f / 320f), (16f / 320f));
+
+            shaderTranslucent.use();
+            shaderTranslucent.setUniform1i("uAtlas", 0);
+            shaderTranslucent.setUniform2f("uTileSize", (16f / 320f), (16f / 320f));
 
             Camera camera = new Camera();
             CameraController controller = new CameraController(camera, window);
@@ -77,6 +91,8 @@ public final class LwjglRendererV1 {
             double acc = 0.0;
 
             int cs = EngineConfig.CHUNK_SIZE;
+            final int SUBMIT_BUDGET_PER_FRAME = 64;
+            final int UPLOAD_BUDGET_PER_FRAME = 128;
 
             while (!glfwWindowShouldClose(window)) {
                 double now = glfwGetTime();
@@ -88,11 +104,12 @@ public final class LwjglRendererV1 {
                 frames++;
                 if (acc >= 1.0) {
                     glfwSetWindowTitle(window,
-                    "Voxel Renderer v1 (r=" + radius +
-                        ", FPS: " + frames +
-                        ", entries=" + meshCache.entryCount() +
-                        ", meshes=" + meshCache.meshCount() +
-                        ", inFlight=" + meshCache.inFlightCount() + ")"
+                            "Voxel Renderer v1 (r=" + radius +
+                                    ", FPS: " + frames +
+                                    ", opaque=" + opaqueCache.meshCount() +
+                                    ", cutout=" + cutoutCache.meshCount() +
+                                    ", trans=" + translucentCache.meshCount() +
+                                    ", inFlight=" + (opaqueCache.inFlightCount() + cutoutCache.inFlightCount() + translucentCache.inFlightCount()) + ")"
                     );
                     frames = 0;
                     acc = 0.0;
@@ -112,19 +129,34 @@ public final class LwjglRendererV1 {
                 int centerCx = (int) Math.floor(camera.position.x / cs);
                 int centerCz = (int) Math.floor(camera.position.z / cs);
 
-                final int SUBMIT_BUDGET_PER_FRAME = 64;  // how many chunk meshes we queue per frame
-                final int UPLOAD_BUDGET_PER_FRAME = 128;  // how many finished meshes we upload per frame
+                // ---- REQUEST (build once, submit to 3 caches) ----
+                // We must not call mesher 3 times per chunk.
+                // So: build ChunkMeshes once and fan-out results.
+                // Easiest with current cache API: request on opaque cache, and in supplier also enqueue into others.
+                // (We rely on the fact that requestRadius won't call supplier for already-cached chunks.)
+                opaqueCache.requestRadius(centerCx, centerCz, radius, SUBMIT_BUDGET_PER_FRAME, (mx, mz) -> {
+                    var meshes = mesher.buildChunkMeshes(chunkProvider, atlas, brm, mx, mz);
 
-                // Ensure meshes around camera (sync in Step 4)
-                meshCache.requestRadius(centerCx, centerCz, radius, SUBMIT_BUDGET_PER_FRAME,
-                        (mx, mz) -> mesher.buildChunkMesh(chunkProvider, atlas, brm, mx, mz)
-                );
+                    // Side-enqueue into other caches
+                    cutoutCache.requestOne(mx, mz, meshes.cutout());
+                    translucentCache.requestOne(mx, mz, meshes.translucent());
 
-                // IMPORTANT: GL upload happens on render thread
-                meshCache.uploadReady(UPLOAD_BUDGET_PER_FRAME);
+                    return meshes.opaque();
+                });
 
-                // Evict far meshes
-                meshCache.evictOutside(centerCx, centerCz, evictRadius);
+                // Ensure other caches also request around radius for eviction bookkeeping
+                cutoutCache.touchRadius(centerCx, centerCz, radius);
+                translucentCache.touchRadius(centerCx, centerCz, radius);
+
+                // ---- UPLOAD ----
+                opaqueCache.uploadReady(UPLOAD_BUDGET_PER_FRAME);
+                cutoutCache.uploadReady(UPLOAD_BUDGET_PER_FRAME);
+                translucentCache.uploadReady(UPLOAD_BUDGET_PER_FRAME);
+
+                // ---- EVICT ----
+                opaqueCache.evictOutside(centerCx, centerCz, evictRadius);
+                cutoutCache.evictOutside(centerCx, centerCz, evictRadius);
+                translucentCache.evictOutside(centerCx, centerCz, evictRadius);
 
                 // MVP
                 Matrix4f proj = new Matrix4f()
@@ -135,11 +167,52 @@ public final class LwjglRendererV1 {
                 Matrix4f view = camera.viewMatrix();
                 Matrix4f mvp = new Matrix4f(proj).mul(view);
 
-                shader.use();
-                shader.setUniformMat4("uMVP", mvp);
                 atlasTex.bind(0);
 
-                meshCache.drawAll();
+                // ----------------------------
+                // PASS 1: OPAQUE
+                // ----------------------------
+                glEnable(GL_DEPTH_TEST);
+                glDepthMask(true);
+                glDisable(GL_BLEND);
+
+                shader.use();
+                shader.setUniformMat4("uMVP", mvp);
+
+                opaqueCache.drawAll();
+
+                // ----------------------------
+                // PASS 2: CUTOUT (alpha discard)
+                // ----------------------------
+                glEnable(GL_DEPTH_TEST);
+                glDepthMask(true);
+                glDisable(GL_BLEND);
+
+                shaderCutout.use();
+                shaderCutout.setUniformMat4("uMVP", mvp);
+
+                cutoutCache.drawAll();
+
+                // ----------------------------
+                // PASS 3: TRANSLUCENT (water/glass)
+                // ----------------------------
+                glEnable(GL_DEPTH_TEST);
+                glDepthMask(false); // don't write depth for blending
+                glEnable(GL_BLEND);
+                glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
+                shaderTranslucent.use();
+                shaderTranslucent.setUniformMat4("uMVP", mvp);
+                shaderTranslucent.setUniform1f("uTime", (float) now);
+
+                // If your ChunkMeshCache already draws in some stable order, this will "mostly work".
+                // Next step: add drawSorted(camera.position) to the cache.
+                float camChunkX = camera.position.x / EngineConfig.CHUNK_SIZE;
+                float camChunkZ = camera.position.z / EngineConfig.CHUNK_SIZE;
+                translucentCache.drawSorted(camChunkX, camChunkZ);
+
+                glDisable(GL_BLEND);
+                glDepthMask(true);
 
                 glfwSwapBuffers(window);
             }

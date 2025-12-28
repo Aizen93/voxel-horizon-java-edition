@@ -10,4 +10,15 @@ public final class Blocks {
     public static final short WATER = 4;
     public static final short SAND = 5;
     public static final short SNOW = 6;
+    public static final short GLASS = 7;
+    public static final short LEAVES = 8;
+    public static final short BUSH = 9;
+
+    public static RenderLayer getRenderLayer(short blockId) {
+        return switch (blockId) {
+            case WATER, GLASS -> RenderLayer.TRANSLUCENT;
+            case LEAVES, BUSH -> RenderLayer.CUTOUT;
+            default -> RenderLayer.OPAQUE;
+        };
+    }
 }
