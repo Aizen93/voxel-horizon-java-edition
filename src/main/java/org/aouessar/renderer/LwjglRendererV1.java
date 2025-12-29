@@ -102,20 +102,39 @@ public final class LwjglRendererV1 {
                 int centerCx = (int) Math.floor(camera.position.x / EngineConfig.CHUNK_SIZE);
                 int centerCz = (int) Math.floor(camera.position.z / EngineConfig.CHUNK_SIZE);
 
-                // ---- REQUEST (build once, submit to 3 caches) ----
-                // We must not call mesher 3 times per chunk.
-                // So: build ChunkMeshes once and fan-out results.
-                // Easiest with current cache API: request on opaque cache, and in supplier also enqueue into others.
-                // (We rely on the fact that requestRadius won't call supplier for already-cached chunks.)
-                opaqueCache.requestRadius(centerCx, centerCz, radius, RendererConfig.SUBMIT_BUDGET_PER_FRAME, (mx, mz) -> {
-                    var meshes = mesher.buildChunkMeshes(chunkProvider, atlas, brm, mx, mz);
+                // MVP (compute EARLY so we can frustum-cull requests)
+                Matrix4f proj = new Matrix4f()
+                    .perspective(
+                        (float) Math.toRadians(75),
+                        (float) width[0] / (float) height[0],
+                        0.1f,
+                        8000f
+                    );
 
-                    // Side-enqueue into other caches
-                    cutoutCache.requestOne(mx, mz, meshes.cutout());
-                    translucentCache.requestOne(mx, mz, meshes.translucent());
+                Matrix4f view = camera.viewMatrix();
+                Matrix4f mvp = new Matrix4f(proj).mul(view);
 
-                    return meshes.opaque();
-                });
+                FrustumIntersection frustum = new FrustumIntersection(mvp);
+
+                // World vertical bounds MUST match core EngineConfig
+                final float minY = EngineConfig.MIN_Y;
+                final float maxY = EngineConfig.MAX_Y + 1f;
+
+                // ---- REQUEST (frustum-aware) ----
+                opaqueCache.requestRadiusCulled(
+                    centerCx, centerCz,
+                    radius,
+                    RendererConfig.SUBMIT_BUDGET_PER_FRAME,
+                    (mx, mz) -> {
+                        var meshes = mesher.buildChunkMeshes(chunkProvider, atlas, brm, mx, mz);
+                        cutoutCache.requestOne(mx, mz, meshes.cutout());
+                        translucentCache.requestOne(mx, mz, meshes.translucent());
+                        return meshes.opaque();
+                    },
+                    frustum,
+                    EngineConfig.CHUNK_SIZE,
+                    minY, maxY
+                );
 
                 // Ensure other caches also request around radius for eviction bookkeeping
                 cutoutCache.touchRadius(centerCx, centerCz, radius);
@@ -130,23 +149,6 @@ public final class LwjglRendererV1 {
                 opaqueCache.evictOutside(centerCx, centerCz, evictRadius);
                 cutoutCache.evictOutside(centerCx, centerCz, evictRadius);
                 translucentCache.evictOutside(centerCx, centerCz, evictRadius);
-
-                // MVP
-                Matrix4f proj = new Matrix4f()
-                    .perspective(
-                        (float) Math.toRadians(75),
-                        (float) width[0] / (float) height[0],
-                        0.1f,
-                        8000f
-                );
-
-                Matrix4f view = camera.viewMatrix();
-                Matrix4f mvp = new Matrix4f(proj).mul(view);
-                FrustumIntersection frustum = new FrustumIntersection(mvp);
-
-                // World vertical bounds — MUST match core EngineConfig
-                final float minY = EngineConfig.MIN_Y;
-                final float maxY = EngineConfig.MAX_Y + 1f;
 
                 atlasTex.bind(0);
 

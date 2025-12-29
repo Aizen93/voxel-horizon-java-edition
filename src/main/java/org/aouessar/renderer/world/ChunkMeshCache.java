@@ -3,14 +3,13 @@ package org.aouessar.renderer.world;
 import org.aouessar.renderer.gl.GlMesh;
 import org.aouessar.renderer.gl.IGlMesh;
 import org.aouessar.renderer.mesh.MeshData;
+import org.joml.FrustumIntersection;
 
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.Map;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
-
-import org.joml.FrustumIntersection;
 
 public final class ChunkMeshCache implements AutoCloseable {
 
@@ -287,8 +286,7 @@ public final class ChunkMeshCache implements AutoCloseable {
      * Intended for TRANSLUCENT pass.
      */
     public void drawSorted(float camX, float camZ) {
-        // Collect visible meshes (avoid allocating too much: capacity ~ entries.size())
-        ArrayList<DrawItem> list = new ArrayList<>(entries.size());
+        drawList.clear();
 
         for (var me : entries.entrySet()) {
             Entry e = me.getValue();
@@ -299,20 +297,16 @@ public final class ChunkMeshCache implements AutoCloseable {
             int cx = ChunkKey.unpackX(key);
             int cz = ChunkKey.unpackZ(key);
 
-            // chunk center in world space (x/z). Use 0.5 to center the chunk.
-            // We don't know CHUNK_SIZE here; but you can derive it if you want.
-            // Since cx/cz are in chunk coords, distance in chunk units is fine for sorting.
             float dx = (cx + 0.5f) - camX;
             float dz = (cz + 0.5f) - camZ;
             float d2 = dx * dx + dz * dz;
 
-            list.add(new DrawItem(m, d2));
+            drawList.add(new DrawItem(m, d2));
         }
 
-        // Far -> near
-        list.sort(Comparator.comparingDouble(DrawItem::d2).reversed());
+        drawList.sort(Comparator.comparingDouble(DrawItem::d2).reversed());
 
-        for (DrawItem it : list) {
+        for (DrawItem it : drawList) {
             it.mesh.draw();
         }
     }
@@ -378,5 +372,72 @@ public final class ChunkMeshCache implements AutoCloseable {
         }
 
         return drawList.size();
+    }
+
+    /**
+     * Request meshes in a square radius around (centerCx, centerCz),
+     * but only submit jobs for chunks whose AABB intersects the current frustum.
+     *
+     * Render thread only (same intended usage as requestRadius).
+     */
+    public void requestRadiusCulled(
+            int centerCx, int centerCz,
+            int radiusChunks,
+            int submitBudget,
+            MeshBuilder builder,
+            FrustumIntersection frustum,
+            int chunkSize,
+            float minY, float maxY
+    ) {
+        if (submitBudget <= 0) return;
+        if (inFlight.get() >= maxInFlight) return;
+
+        for (int r = 0; r <= radiusChunks && submitBudget > 0; r++) {
+
+            for (int dx = -r; dx <= r && submitBudget > 0; dx++) {
+                int cx1 = centerCx + dx;
+                int cz1 = centerCz - r;
+                if (chunkIntersectsFrustum(frustum, cx1, cz1, chunkSize, minY, maxY)) {
+                    submitBudget = trySubmit(cx1, cz1, submitBudget, builder);
+                }
+
+                if (r != 0) {
+                    int cx2 = centerCx + dx;
+                    int cz2 = centerCz + r;
+                    if (chunkIntersectsFrustum(frustum, cx2, cz2, chunkSize, minY, maxY)) {
+                        submitBudget = trySubmit(cx2, cz2, submitBudget, builder);
+                    }
+                }
+            }
+
+            for (int dz = -r + 1; dz <= r - 1 && submitBudget > 0; dz++) {
+                int cx1 = centerCx - r;
+                int cz1 = centerCz + dz;
+                if (chunkIntersectsFrustum(frustum, cx1, cz1, chunkSize, minY, maxY)) {
+                    submitBudget = trySubmit(cx1, cz1, submitBudget, builder);
+                }
+
+                if (r != 0) {
+                    int cx2 = centerCx + r;
+                    int cz2 = centerCz + dz;
+                    if (chunkIntersectsFrustum(frustum, cx2, cz2, chunkSize, minY, maxY)) {
+                        submitBudget = trySubmit(cx2, cz2, submitBudget, builder);
+                    }
+                }
+            }
+        }
+    }
+
+    private static boolean chunkIntersectsFrustum(
+            FrustumIntersection frustum,
+            int cx, int cz,
+            int chunkSize,
+            float minY, float maxY
+    ) {
+        float minX = (float) cx * chunkSize;
+        float minZ = (float) cz * chunkSize;
+        float maxX = minX + chunkSize;
+        float maxZ = minZ + chunkSize;
+        return frustum.testAab(minX, minY, minZ, maxX, maxY, maxZ);
     }
 }
