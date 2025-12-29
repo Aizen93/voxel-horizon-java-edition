@@ -129,6 +129,73 @@ public final class GreedyChunkMesher {
                         int c = mask[n];
                         if (c == 0) { iu++; n++; continue; }
 
+                        // decode early (so we can special-case before merging)
+                        short blockId = unpackBlockId(c);
+                        int face = unpackFace(c);
+
+                        boolean isWater = (blockId == Blocks.WATER);
+                        boolean isSideFace = (face == Face.PX || face == Face.NX || face == Face.PZ || face == Face.NZ);
+
+                        // ---------------------------------------------------------
+                        // SPECIAL CASE: Water SIDE faces (PX/NX/PZ/NZ)
+                        // Emit per-cell quads so the top edge matches the lowered surface.
+                        // This fixes the "water side reaches full cube height" artifact.
+                        // ---------------------------------------------------------
+                        if (isWater && isSideFace) {
+                            // rectangle is 1x1 in (u,w)
+                            int[] p = new int[]{ x[0], x[1], x[2] };
+                            p[u] = iu;
+                            p[w] = jw;
+
+                            // Visible face plane coordinate:
+                            p[d] = x[d] + 1;
+
+                            int[] du = new int[]{0,0,0};
+                            int[] dw = new int[]{0,0,0};
+                            du[u] = 1;
+                            dw[w] = 1;
+
+                            // World-space block bounds for this single cell
+                            int x0 = baseWx + p[0];
+                            int y0 = p[1];
+                            int z0 = baseWz + p[2];
+
+                            int x1 = x0 + du[0] + dw[0];
+                            int y1 = y0 + du[1] + dw[1];
+                            int z1 = z0 + du[2] + dw[2];
+
+                            // Determine if this water block is a surface water block (above != water)
+                            boolean surface = isSurfaceWater(accessor, x0, y0, z0);
+                            float topY = surface ? waterSurfaceTopY(y0) : (y0 + 1f);
+
+                            // water is translucent
+                            translucent.ensure(1);
+
+                            int base = translucent.vCount;
+                            Atlas.UvRect uv = atlas.uv(blockRenderMap.tileName(blockId, face));
+
+                            var fe = emitRectFaceWaterSide(
+                                    translucent.v, translucent.vCount,
+                                    x0, y0, z0,
+                                    x1, y1, z1,
+                                    face,
+                                    uv,
+                                    topY
+                            );
+                            translucent.vCount = fe.newVertexCount();
+                            translucent.iCount = emitIndices(translucent.i, translucent.iCount, base, fe.flip());
+
+                            // clear only this cell (no greedy merging)
+                            mask[n] = 0;
+
+                            iu += 1;
+                            n  += 1;
+                            continue;
+                        }
+
+                        // -----------------------------
+                        // NORMAL greedy merging
+                        // -----------------------------
                         // width
                         int width = 1;
                         while (iu + width < duDim && mask[n + width] == c) width++;
@@ -143,9 +210,6 @@ public final class GreedyChunkMesher {
                             }
                             height++;
                         }
-
-                        short blockId = unpackBlockId(c);
-                        int face = unpackFace(c);
 
                         // Choose which mesh buffer receives this quad
                         Buf target = switch (Blocks.getRenderLayer(blockId)) {
@@ -184,7 +248,13 @@ public final class GreedyChunkMesher {
                         int base = target.vCount;
 
                         Atlas.UvRect uv = atlas.uv(blockRenderMap.tileName(blockId, face));
-                        var fe = emitRectFace(target.v, target.vCount, x0, y0, z0, x1, y1, z1, face, blockId, uv);
+                        var fe = emitRectFace(target.v, target.vCount,
+                                x0, y0, z0,
+                                x1, y1, z1,
+                                face,
+                                blockId,
+                                uv
+                        );
                         target.vCount = fe.newVertexCount();
                         target.iCount = emitIndices(target.i, target.iCount, base, fe.flip());
 
@@ -195,7 +265,7 @@ public final class GreedyChunkMesher {
                         }
 
                         iu += width;
-                        n += width;
+                        n  += width;
                     }
                 }
             }
@@ -316,7 +386,7 @@ public final class GreedyChunkMesher {
             case Face.PY -> {
                 float y = y1;
                 if (blockId == Blocks.WATER) {
-                    y = y1 - 0.1f; // tweak: 0.85–0.92 feels good
+                    y = y1 - EngineConfig.WATER_TOP_DELTA; // tweak: 0.85–0.92 feels good
                 }
                 put(v, vertexCount++, x0, y, z0, tileMinU, tileMinV, lu0, lv0);
                 put(v, vertexCount++, x1, y, z0, tileMinU, tileMinV, lu1, lv0);
@@ -345,6 +415,11 @@ public final class GreedyChunkMesher {
         }
 
         // Compute face normal from positions of first triangle (base, base+1, base+2)
+        boolean flip = isFlip(v, face, base);
+        return new FaceEmit(vertexCount, flip);
+    }
+
+    private static boolean isFlip(float[] v, int face, int base) {
         float ax = v[base * 7];
         float ay = v[base * 7 + 1];
         float az = v[base * 7 + 2];
@@ -380,7 +455,7 @@ public final class GreedyChunkMesher {
         }
 
         boolean flip = (nx * ex + ny * ey + nz * ez) < 0f;
-        return new FaceEmit(vertexCount, flip);
+        return flip;
     }
 
     private static int faceUBlocks(int face, int x0, int y0, int z0, int x1, int y1, int z1) {
@@ -548,5 +623,99 @@ public final class GreedyChunkMesher {
         put(target.v, target.vCount++, xB, y0, zB, tileMinU, tileMinV, 1f, 0f);
 
         target.iCount = emitIndices(target.i, target.iCount, base1, false);
+    }
+
+    private static boolean isSurfaceWater(BlockAccessor accessor, int wx, int wy, int wz) {
+        if (accessor.blockAtWorld(wx, wy, wz) != Blocks.WATER) return false;
+        return accessor.blockAtWorld(wx, wy + 1, wz) != Blocks.WATER;
+    }
+
+    private static float waterSurfaceTopY(int wy) {
+        return (wy + 1f) - EngineConfig.WATER_TOP_DELTA;
+    }
+
+    private static FaceEmit emitRectFaceWaterSide(
+            float[] v,
+            int vertexCount,
+            int x0, int y0, int z0,
+            int x1, int y1, int z1,
+            int face,
+            Atlas.UvRect uv,
+            float topY
+    ) {
+        float tileMinU = uv.u0();
+        float tileMinV = uv.v0();
+
+        int uBlocks = faceUBlocks(face, x0, y0, z0, x1, y1, z1);
+        int vBlocks = faceVBlocks(face, x0, y0, z0, x1, y1, z1);
+
+        float lu0 = 0f, lv0 = 0f;
+        float lu1 = uBlocks, lv1 = vBlocks;
+
+        if (face == Face.PX || face == Face.NX || face == Face.PZ || face == Face.NZ) {
+            float tmp = lv0; lv0 = lv1; lv1 = tmp;
+        }
+
+        int base = vertexCount;
+
+        float fy0 = y0;
+        float fy1 = topY; // custom top
+
+        switch (face) {
+            case Face.PX -> {
+                put(v, vertexCount++, x1, fy0, z0, tileMinU, tileMinV, lu0, lv0);
+                put(v, vertexCount++, x1, fy0, z1, tileMinU, tileMinV, lu1, lv0);
+                put(v, vertexCount++, x1, fy1, z1, tileMinU, tileMinV, lu1, lv1);
+                put(v, vertexCount++, x1, fy1, z0, tileMinU, tileMinV, lu0, lv1);
+            }
+            case Face.NX -> {
+                put(v, vertexCount++, x0, fy0, z1, tileMinU, tileMinV, lu0, lv0);
+                put(v, vertexCount++, x0, fy0, z0, tileMinU, tileMinV, lu1, lv0);
+                put(v, vertexCount++, x0, fy1, z0, tileMinU, tileMinV, lu1, lv1);
+                put(v, vertexCount++, x0, fy1, z1, tileMinU, tileMinV, lu0, lv1);
+            }
+            case Face.PZ -> {
+                put(v, vertexCount++, x1, fy0, z1, tileMinU, tileMinV, lu0, lv0);
+                put(v, vertexCount++, x0, fy0, z1, tileMinU, tileMinV, lu1, lv0);
+                put(v, vertexCount++, x0, fy1, z1, tileMinU, tileMinV, lu1, lv1);
+                put(v, vertexCount++, x1, fy1, z1, tileMinU, tileMinV, lu0, lv1);
+            }
+            case Face.NZ -> {
+                put(v, vertexCount++, x0, fy0, z0, tileMinU, tileMinV, lu0, lv0);
+                put(v, vertexCount++, x1, fy0, z0, tileMinU, tileMinV, lu1, lv0);
+                put(v, vertexCount++, x1, fy1, z0, tileMinU, tileMinV, lu1, lv1);
+                put(v, vertexCount++, x0, fy1, z0, tileMinU, tileMinV, lu0, lv1);
+            }
+            default -> throw new IllegalArgumentException("emitRectFaceWaterSide only for side faces");
+        }
+
+        // Normal/flip logic same as emitRectFace
+        float ax = v[base * 7];
+        float ay = v[base * 7 + 1];
+        float az = v[base * 7 + 2];
+        float bx = v[(base + 1) * 7];
+        float by = v[(base + 1) * 7 + 1];
+        float bz = v[(base + 1) * 7 + 2];
+        float cx = v[(base + 2) * 7];
+        float cy = v[(base + 2) * 7 + 1];
+        float cz = v[(base + 2) * 7 + 2];
+
+        float abx = bx - ax, aby = by - ay, abz = bz - az;
+        float acx = cx - ax, acy = cy - ay, acz = cz - az;
+
+        float nx = aby * acz - abz * acy;
+        float ny = abz * acx - abx * acz;
+        float nz = abx * acy - aby * acx;
+
+        float ex = 0, ey = 0, ez = 0;
+        switch (face) {
+            case Face.PX -> ex = 1;
+            case Face.NX -> ex = -1;
+            case Face.PZ -> ez = 1;
+            case Face.NZ -> ez = -1;
+        }
+
+        boolean flip = (nx * ex + ny * ey + nz * ez) < 0f;
+        return new FaceEmit(vertexCount, flip);
     }
 }

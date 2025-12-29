@@ -15,6 +15,7 @@ public final class EngineConfig {
     public static final int MIN_Y = -64;
     public static final int MAX_Y = 319;
     public static final int WORLD_HEIGHT = (MAX_Y - MIN_Y + 1); // 384
+    public static final float WATER_TOP_DELTA = 0.2f;
 
     // Vanilla-ish default sea level used by many tools/resources is 62 :contentReference[oaicite:2]{index=2}
     public static final int SEA_LEVEL = 62;
