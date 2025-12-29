@@ -10,6 +10,8 @@ import java.util.Map;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import org.joml.FrustumIntersection;
+
 public final class ChunkMeshCache implements AutoCloseable {
 
     @FunctionalInterface
@@ -32,6 +34,9 @@ public final class ChunkMeshCache implements AutoCloseable {
 
     private final ConcurrentHashMap<Long, Entry> entries = new ConcurrentHashMap<>();
     private final ConcurrentLinkedQueue<Ready> readyQueue = new ConcurrentLinkedQueue<>();
+
+    // Render thread only: reused list to avoid per-frame allocations in sorted draws
+    private final ArrayList<DrawItem> drawList = new ArrayList<>(1024);
 
     private final ExecutorService executor;
     private final int maxInFlight;
@@ -310,5 +315,68 @@ public final class ChunkMeshCache implements AutoCloseable {
         for (DrawItem it : list) {
             it.mesh.draw();
         }
+    }
+
+    public int drawAllCulled(FrustumIntersection frustum, int chunkSize, float minY, float maxY) {
+        int drawn = 0;
+
+        for (var me : entries.entrySet()) {
+            Entry e = me.getValue();
+            IGlMesh m = e.mesh;
+            if (m == null) continue;
+
+            long key = me.getKey();
+            int cx = ChunkKey.unpackX(key);
+            int cz = ChunkKey.unpackZ(key);
+
+            float minX = (float) cx * chunkSize;
+            float minZ = (float) cz * chunkSize;
+            float maxX = minX + chunkSize;
+            float maxZ = minZ + chunkSize;
+
+            if (!frustum.testAab(minX, minY, minZ, maxX, maxY, maxZ)) continue;
+
+            m.draw();
+            drawn++;
+        }
+
+        return drawn;
+    }
+
+    public int drawSortedCulled(float camX, float camZ, FrustumIntersection frustum, int chunkSize, float minY, float maxY) {
+        drawList.clear();
+
+        for (var me : entries.entrySet()) {
+            Entry e = me.getValue();
+            IGlMesh m = e.mesh;
+            if (m == null) continue;
+
+            long key = me.getKey();
+            int cx = ChunkKey.unpackX(key);
+            int cz = ChunkKey.unpackZ(key);
+
+            float minX = (float) cx * chunkSize;
+            float minZ = (float) cz * chunkSize;
+            float maxX = minX + chunkSize;
+            float maxZ = minZ + chunkSize;
+
+            if (!frustum.testAab(minX, minY, minZ, maxX, maxY, maxZ)) continue;
+
+            // Sorting in chunk units is fine (camX/camZ are chunk-space in your renderer)
+            float dx = (cx + 0.5f) - camX;
+            float dz = (cz + 0.5f) - camZ;
+            float d2 = dx * dx + dz * dz;
+
+            drawList.add(new DrawItem(m, d2));
+        }
+
+        // Far -> near
+        drawList.sort(Comparator.comparingDouble(DrawItem::d2).reversed());
+
+        for (DrawItem it : drawList) {
+            it.mesh.draw();
+        }
+
+        return drawList.size();
     }
 }

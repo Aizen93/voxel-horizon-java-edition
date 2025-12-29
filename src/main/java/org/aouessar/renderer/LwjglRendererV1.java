@@ -14,6 +14,8 @@ import org.aouessar.renderer.world.ChunkMeshCache;
 import org.aouessar.shared.EngineConfig;
 import org.joml.Matrix4f;
 
+import org.joml.FrustumIntersection;
+
 import static org.lwjgl.glfw.GLFW.*;
 import static org.lwjgl.opengl.GL.*;
 import static org.lwjgl.opengl.GL11.*;
@@ -85,23 +87,6 @@ public final class LwjglRendererV1 {
             while (!glfwWindowShouldClose(window)) {
                 double now = glfwGetTime();
                 float dt = (float) (now - lastTime);
-                lastTime = now;
-
-                // FPS
-                acc += dt;
-                frames++;
-                if (acc >= 1.0) {
-                    glfwSetWindowTitle(window,
-                            "Voxel Renderer v1 (r=" + radius +
-                                    ", FPS: " + frames +
-                                    ", opaque=" + opaqueCache.meshCount() +
-                                    ", cutout=" + cutoutCache.meshCount() +
-                                    ", trans=" + translucentCache.meshCount() +
-                                    ", inFlight=" + (opaqueCache.inFlightCount() + cutoutCache.inFlightCount() + translucentCache.inFlightCount()) + ")"
-                    );
-                    frames = 0;
-                    acc = 0.0;
-                }
 
                 glfwPollEvents();
                 controller.update(dt);
@@ -157,6 +142,11 @@ public final class LwjglRendererV1 {
 
                 Matrix4f view = camera.viewMatrix();
                 Matrix4f mvp = new Matrix4f(proj).mul(view);
+                FrustumIntersection frustum = new FrustumIntersection(mvp);
+
+                // World vertical bounds — MUST match core EngineConfig
+                final float minY = EngineConfig.MIN_Y;
+                final float maxY = EngineConfig.MAX_Y + 1f;
 
                 atlasTex.bind(0);
 
@@ -168,7 +158,8 @@ public final class LwjglRendererV1 {
                 glDisable(GL_BLEND);
 
                 setupShaderPassUniforms(shader, camera, mvp);
-                opaqueCache.drawAll();
+                //opaqueCache.drawAll();
+                int drawnOpaque = opaqueCache.drawAllCulled(frustum, EngineConfig.CHUNK_SIZE, minY, maxY);
 
                 // ----------------------------
                 // PASS 2: CUTOUT (alpha discard)
@@ -178,7 +169,9 @@ public final class LwjglRendererV1 {
                 glDisable(GL_BLEND);
 
                 setupShaderPassUniforms(shaderCutout, camera, mvp);
-                cutoutCache.drawAll();
+                //cutoutCache.drawAll();
+                int drawnCutout = cutoutCache.drawAllCulled(frustum, EngineConfig.CHUNK_SIZE, minY, maxY);
+
 
                 // ----------------------------
                 // PASS 3: TRANSLUCENT (water/glass)
@@ -190,10 +183,32 @@ public final class LwjglRendererV1 {
 
                 setupShaderPassUniforms(shaderTranslucent, camera, mvp);
                 shaderTranslucent.setUniform1f("uTime", (float) now);
-                translucentCache.drawSorted(centerCx, centerCz);
+
+                float camChunkX = camera.position.x / EngineConfig.CHUNK_SIZE;
+                float camChunkZ = camera.position.z / EngineConfig.CHUNK_SIZE;
+                //translucentCache.drawSorted(camChunkX, camChunkZ);
+                int drawnTrans = translucentCache.drawSortedCulled(camChunkX, camChunkZ, frustum, EngineConfig.CHUNK_SIZE, minY, maxY);
 
                 glDisable(GL_BLEND);
                 glDepthMask(true);
+
+                lastTime = now;
+
+                // FPS
+                acc += dt;
+                frames++;
+                if (acc >= 1.0) {
+                    glfwSetWindowTitle(window,
+                    "Voxel Renderer v1 (r = " + radius +
+                        ", FPS: " + frames +
+                        ", opaque: [Drawn=" + drawnOpaque + ", Count=" + opaqueCache.meshCount() + "]" +
+                        ", cutout: [Drawn=" + drawnCutout + ", Count=" + cutoutCache.meshCount() + "]" +
+                        ", trans: [Drawn=" + drawnTrans + ", Count=" + translucentCache.meshCount() + "]" +
+                        ", inFlight = " + (opaqueCache.inFlightCount() + cutoutCache.inFlightCount() + translucentCache.inFlightCount()) + ")"
+                    );
+                    frames = 0;
+                    acc = 0.0;
+                }
 
                 glfwSwapBuffers(window);
             }
