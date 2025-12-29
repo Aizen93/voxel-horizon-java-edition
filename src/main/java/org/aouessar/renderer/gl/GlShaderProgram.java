@@ -111,4 +111,10 @@ public final class GlShaderProgram implements AutoCloseable {
         if (loc < 0) return; // uniform not found/optimized out
         glUniform1f(loc, v);
     }
+
+    public void setUniform3f(String name, float x, float y, float z) {
+        int loc = glGetUniformLocation(programId, name);
+        if (loc < 0) return; // uniform not found/optimized out
+        glUniform3f(loc, x, y, z);
+    }
 }

@@ -2,10 +2,22 @@
 
 in vec2 vTileMin;
 in vec2 vUvLocal;
+in vec3 vWorldPos;
 
 uniform sampler2D uAtlas;
 uniform vec2 uTileSize;
 uniform float uTime;
+
+// Fog controls (set from Java)
+uniform vec3  uCameraPos;
+uniform vec3  uFogColor;
+
+uniform float uFogAltBase;
+uniform float uFogAltRange;
+uniform float uFogStartLow;
+uniform float uFogStartHigh;
+uniform float uFogRangeLow;
+uniform float uFogRangeHigh;
 
 out vec4 FragColor;
 
@@ -32,10 +44,19 @@ void main() {
 
     vec4 tex = texture(uAtlas, uv);
 
-
     vec3 rgb = tex.rgb;
     float baseAlpha = 0.65;
     float a = clamp(tex.a * baseAlpha, 0.0, 0.70);
+
+    float dist = length(vWorldPos - uCameraPos);
+    float camAlt = uCameraPos.y;
+
+    float altT = clamp((camAlt - uFogAltBase) / max(uFogAltRange, 0.0001), 0.0, 1.0);
+    float fogStart = mix(uFogStartLow, uFogStartHigh, altT);
+    float fogRange = mix(uFogRangeLow, uFogRangeHigh, altT);
+    float fog = clamp((dist - fogStart) / max(fogRange, 0.0001), 0.0, 1.0);
+
+    rgb = mix(rgb, uFogColor, fog);
 
     FragColor = vec4(rgb, a);
 }

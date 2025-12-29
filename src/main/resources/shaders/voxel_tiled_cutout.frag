@@ -8,6 +8,17 @@ uniform sampler2D uAtlas;
 uniform vec2 uTileSize;
 uniform float uAlphaCutoff = 0.5;
 
+// Fog controls (set from Java)
+uniform vec3  uCameraPos;
+uniform vec3  uFogColor;
+
+uniform float uFogAltBase;
+uniform float uFogAltRange;
+uniform float uFogStartLow;
+uniform float uFogStartHigh;
+uniform float uFogRangeLow;
+uniform float uFogRangeHigh;
+
 out vec4 FragColor;
 
 float mcShade(vec3 n) {
@@ -23,9 +34,18 @@ void main() {
 
     if (tex.a < uAlphaCutoff) discard;
 
-    // vegetation is double-sided: use abs to avoid “dark backface”
     vec3 n = normalize(cross(dFdx(vWorldPos), dFdy(vWorldPos)));
-    tex.rgb *= mcShade(vec3(abs(n.x), abs(n.y), abs(n.z)));
+    vec3 color = tex.rgb * mcShade(vec3(abs(n.x), abs(n.y), abs(n.z)));
 
-    FragColor = tex;
+    float dist = length(vWorldPos - uCameraPos);
+    float camAlt = uCameraPos.y;
+
+    float altT = clamp((camAlt - uFogAltBase) / max(uFogAltRange, 0.0001), 0.0, 1.0);
+    float fogStart = mix(uFogStartLow, uFogStartHigh, altT);
+    float fogRange = mix(uFogRangeLow, uFogRangeHigh, altT);
+    float fog = clamp((dist - fogStart) / max(fogRange, 0.0001), 0.0, 1.0);
+
+    color = mix(color, uFogColor, fog);
+
+    FragColor = vec4(color, 1.0);
 }
