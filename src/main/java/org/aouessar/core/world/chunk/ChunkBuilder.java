@@ -4,6 +4,7 @@ import org.aouessar.core.world.Blocks;
 import org.aouessar.core.world.Region;
 import org.aouessar.core.world.WorldGrid;
 import org.aouessar.core.world.layers.RegionLayers;
+import org.aouessar.core.world.layers.StructureMap;
 import org.aouessar.shared.EngineConfig;
 
 public final class ChunkBuilder {
@@ -51,6 +52,32 @@ public final class ChunkBuilder {
 
                     chunk.setBlock(lx, wy, lz, id);
                 }
+
+                // ---- structures (vegetation) ----
+                for (StructureMap.Placement p : layers.structureMap().placements()) {
+                    // filter to this chunk
+                    if (Math.floorDiv(p.wx(), 16) != cx || Math.floorDiv(p.wz(), 16) != cz) {
+                        continue;
+                    }
+
+                    int lxS = Math.floorMod(p.wx(), 16);
+                    int lzS = Math.floorMod(p.wz(), 16);
+                    int wyS = p.wy();
+
+                    // bounds safety (paranoid but correct)
+                    if (wyS < EngineConfig.MIN_Y || wyS > EngineConfig.MAX_Y) {
+                        continue;
+                    }
+
+                    // must be on grass
+                    if (chunk.getBlock(lxS, wyS - 1, lzS) != Blocks.GRASS) {
+                        continue;
+                    }
+
+                    // place bush
+                    chunk.setBlock(lxS, wyS, lzS, p.structureId());
+                }
+
             }
         }
 

@@ -14,7 +14,7 @@ import org.aouessar.renderer.LwjglRendererV1;
 public final class Main {
 
     public static void main(String[] args) {
-        long seed = 12345L;
+        long seed = 905282311L;
 
         // Core pipeline (deterministic, region-based)
         RegionPipeline pipeline = new DefaultRegionPipeline(

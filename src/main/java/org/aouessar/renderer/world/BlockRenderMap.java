@@ -16,7 +16,8 @@ public final class BlockRenderMap {
         putAllFaces(Blocks.STONE, "stone");
         putAllFaces(Blocks.SAND, "sand");
         putAllFaces(Blocks.SNOW, "snow");
-        putAllFaces(Blocks.WATER, "water"); // if you have it in atlas; otherwise rename here
+        putAllFaces(Blocks.WATER, "water");
+        putAllFaces(Blocks.BUSH, "bush");
 
         // Grass: top/side/bottom
         map.put(Blocks.GRASS, new FaceTiles(

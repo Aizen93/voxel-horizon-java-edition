@@ -5,7 +5,7 @@ import org.joml.Vector3f;
 
 public final class Camera {
 
-    public final Vector3f position = new Vector3f(0, 80, 0);
+    public final Vector3f position = new Vector3f(0, 180, 0);
 
     // yaw/pitch in radians
     public float yaw = (float) Math.toRadians(90);

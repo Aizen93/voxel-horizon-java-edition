@@ -47,9 +47,10 @@ public final class GlShaderProgram implements AutoCloseable {
         return programId;
     }
 
-    public void setUniform1i(String name, int value) {
+    public void setUniform1i(String name, int v) {
         int loc = glGetUniformLocation(programId, name);
-        if (loc >= 0) glUniform1i(loc, value);
+        if (loc < 0) throw new IllegalStateException("Uniform not found: " + name);
+        glUniform1i(loc, v);
     }
 
     public void setUniformMat4(String name, Matrix4f mat) {
@@ -95,5 +96,25 @@ public final class GlShaderProgram implements AutoCloseable {
         } catch (Exception e) {
             throw new RuntimeException("Failed reading resource: " + path, e);
         }
+    }
+
+    public void setUniform2f(String name, float x, float y) {
+        int loc = glGetUniformLocation(programId, name);
+        if (loc < 0) {
+            throw new IllegalStateException("Uniform not found: " + name);
+        }
+        glUniform2f(loc, x, y);
+    }
+
+    public void setUniform1f(String name, float v) {
+        int loc = glGetUniformLocation(programId, name);
+        if (loc < 0) return; // uniform not found/optimized out
+        glUniform1f(loc, v);
+    }
+
+    public void setUniform3f(String name, float x, float y, float z) {
+        int loc = glGetUniformLocation(programId, name);
+        if (loc < 0) return; // uniform not found/optimized out
+        glUniform3f(loc, x, y, z);
     }
 }
