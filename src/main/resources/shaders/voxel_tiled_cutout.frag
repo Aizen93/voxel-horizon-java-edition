@@ -18,6 +18,8 @@ uniform float uFogStartLow;
 uniform float uFogStartHigh;
 uniform float uFogRangeLow;
 uniform float uFogRangeHigh;
+uniform float uFogStartMul;   // 1.0 normally, <1 tightens fog (rain/mist)
+uniform float uFogRangeMul;   // 1.0 normally, <1 tightens fog (rain/mist)
 
 out vec4 FragColor;
 
@@ -41,8 +43,8 @@ void main() {
     float camAlt = uCameraPos.y;
 
     float altT = clamp((camAlt - uFogAltBase) / max(uFogAltRange, 0.0001), 0.0, 1.0);
-    float fogStart = mix(uFogStartLow, uFogStartHigh, altT);
-    float fogRange = mix(uFogRangeLow, uFogRangeHigh, altT);
+    float fogStart = mix(uFogStartLow, uFogStartHigh, altT) * uFogStartMul;
+    float fogRange = mix(uFogRangeLow, uFogRangeHigh, altT) * uFogRangeMul;
     float fog = clamp((dist - fogStart) / max(fogRange, 0.0001), 0.0, 1.0);
 
     color = mix(color, uFogColor, fog);

@@ -11,13 +11,15 @@ import org.aouessar.renderer.gl.GlTexture2D;
 import org.aouessar.renderer.mesh.GreedyChunkMesher;
 import org.aouessar.renderer.world.BlockRenderMap;
 import org.aouessar.renderer.world.ChunkMeshCache;
+import org.aouessar.renderer.world.FogCycle;
+import org.aouessar.renderer.world.SkyRenderer;
 import org.aouessar.shared.EngineConfig;
-import org.joml.Matrix4f;
-
 import org.joml.FrustumIntersection;
+import org.joml.Matrix4f;
+import org.joml.Math;
 
 import static org.lwjgl.glfw.GLFW.*;
-import static org.lwjgl.opengl.GL.*;
+import static org.lwjgl.opengl.GL.createCapabilities;
 import static org.lwjgl.opengl.GL11.*;
 
 public final class LwjglRendererV1 {
@@ -27,6 +29,7 @@ public final class LwjglRendererV1 {
 
     // Keep a little hysteresis to avoid eviction thrashing
     private final int evictRadius;
+    private final FogCycle fogCycle = new FogCycle();
 
     public LwjglRendererV1(ChunkProvider chunkProvider, int radius) {
         this.chunkProvider = chunkProvider;
@@ -53,12 +56,12 @@ public final class LwjglRendererV1 {
         glFrontFace(GL_CCW);
 
         glEnable(GL_DEPTH_TEST);
-        glClearColor(RendererConfig.FOGR, RendererConfig.FOGG, RendererConfig.FOGB, 1.0f);
 
         Atlas atlas = new AtlasLoader().loadFromResources(RendererConfig.ATLAS_JSON);
         BlockRenderMap brm = new BlockRenderMap();
 
         try (
+                SkyRenderer sky = new SkyRenderer(RendererConfig.SKY_VERT, RendererConfig.SKY_FRAG);
                 GlShaderProgram shader = new GlShaderProgram(RendererConfig.VOXEL_TILED_VERT, RendererConfig.VOXEL_TILED_FRAG);
                 GlShaderProgram shaderTranslucent = new GlShaderProgram(RendererConfig.VOXEL_TILED_VERT, RendererConfig.VOXEL_TILED_TRANSLUCENT_FRAG);
                 GlShaderProgram shaderCutout = new GlShaderProgram(RendererConfig.VOXEL_TILED_VERT, RendererConfig.VOXEL_TILED_CUTOUT_FRAG);
@@ -96,7 +99,11 @@ public final class LwjglRendererV1 {
                 glfwGetFramebufferSize(window, width, height);
                 glViewport(0, 0, width[0], height[0]);
 
-                glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+                fogCycle.setRain01(RendererConfig.DEBUG_RAIN);
+                fogCycle.setMist01(RendererConfig.DEBUG_MIST);
+                fogCycle.update((float) now, camera.position.y);
+
+                sky.render(fogCycle);
 
                 // Camera -> chunk center
                 int centerCx = (int) Math.floor(camera.position.x / EngineConfig.CHUNK_SIZE);
@@ -105,7 +112,7 @@ public final class LwjglRendererV1 {
                 // MVP (compute EARLY so we can frustum-cull requests)
                 Matrix4f proj = new Matrix4f()
                     .perspective(
-                        (float) Math.toRadians(75),
+                        Math.toRadians(75),
                         (float) width[0] / (float) height[0],
                         0.1f,
                         8000f
@@ -159,8 +166,7 @@ public final class LwjglRendererV1 {
                 glDepthMask(true);
                 glDisable(GL_BLEND);
 
-                setupShaderPassUniforms(shader, camera, mvp);
-                //opaqueCache.drawAll();
+                applyPerFrameUniforms(shader, camera, mvp, fogCycle);
                 int drawnOpaque = opaqueCache.drawAllCulled(frustum, EngineConfig.CHUNK_SIZE, minY, maxY);
 
                 // ----------------------------
@@ -170,10 +176,8 @@ public final class LwjglRendererV1 {
                 glDepthMask(true);
                 glDisable(GL_BLEND);
 
-                setupShaderPassUniforms(shaderCutout, camera, mvp);
-                //cutoutCache.drawAll();
+                applyPerFrameUniforms(shaderCutout, camera, mvp, fogCycle);
                 int drawnCutout = cutoutCache.drawAllCulled(frustum, EngineConfig.CHUNK_SIZE, minY, maxY);
-
 
                 // ----------------------------
                 // PASS 3: TRANSLUCENT (water/glass)
@@ -183,12 +187,11 @@ public final class LwjglRendererV1 {
                 glEnable(GL_BLEND);
                 glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
-                setupShaderPassUniforms(shaderTranslucent, camera, mvp);
+                applyPerFrameUniforms(shaderTranslucent, camera, mvp, fogCycle);
                 shaderTranslucent.setUniform1f("uTime", (float) now);
 
                 float camChunkX = camera.position.x / EngineConfig.CHUNK_SIZE;
                 float camChunkZ = camera.position.z / EngineConfig.CHUNK_SIZE;
-                //translucentCache.drawSorted(camChunkX, camChunkZ);
                 int drawnTrans = translucentCache.drawSortedCulled(camChunkX, camChunkZ, frustum, EngineConfig.CHUNK_SIZE, minY, maxY);
 
                 glDisable(GL_BLEND);
@@ -223,24 +226,32 @@ public final class LwjglRendererV1 {
     private void setupShaderCommonUniforms(GlShaderProgram shader) {
         shader.use();
         shader.setUniform1i("uAtlas", 0);
-        shader.setUniform2f("uTileSize", (RendererConfig.ATLAS_TILE_SIZE / RendererConfig.ATLAS_WIDTH), (RendererConfig.ATLAS_TILE_SIZE / RendererConfig.ATLAS_HEIGHT));
-        shader.setUniform3f("uFogColor", RendererConfig.FOGR, RendererConfig.FOGG, RendererConfig.FOGB);
+        shader.setUniform2f("uTileSize",
+                (RendererConfig.ATLAS_TILE_SIZE / RendererConfig.ATLAS_WIDTH),
+                (RendererConfig.ATLAS_TILE_SIZE / RendererConfig.ATLAS_HEIGHT)
+        );
+
+        // Fog constants (rarely change)
         shader.setUniform1f("uFogAltBase", RendererConfig.FOG_ALT_BASE);
         shader.setUniform1f("uFogAltRange", RendererConfig.FOG_ALT_RANGE);
         shader.setUniform1f("uFogStartLow", RendererConfig.FOG_START_LOW);
         shader.setUniform1f("uFogStartHigh", RendererConfig.FOG_START_HIGH);
         shader.setUniform1f("uFogRangeLow", RendererConfig.FOG_RANGE_LOW);
         shader.setUniform1f("uFogRangeHigh", RendererConfig.FOG_RANGE_HIGH);
+
+        // Safe defaults
+        shader.setUniform1f("uFogStartMul", 1.0f);
+        shader.setUniform1f("uFogRangeMul", 1.0f);
     }
 
-    private void setupShaderPassUniforms(GlShaderProgram shader, Camera camera, Matrix4f mvp) {
-        // Fog needs camera world position every frame
-        float camX = camera.position.x;
-        float camY = camera.position.y;
-        float camZ = camera.position.z;
-
+    private void applyPerFrameUniforms(GlShaderProgram shader, Camera camera, Matrix4f mvp, FogCycle fog) {
         shader.use();
         shader.setUniformMat4("uMVP", mvp);
-        shader.setUniform3f("uCameraPos", camX, camY, camZ);
+
+        shader.setUniform3f("uCameraPos", camera.position.x, camera.position.y, camera.position.z);
+
+        shader.setUniform3f("uFogColor", fog.r(), fog.g(), fog.b());
+        shader.setUniform1f("uFogStartMul", fog.startMul());
+        shader.setUniform1f("uFogRangeMul", fog.rangeMul());
     }
 }
