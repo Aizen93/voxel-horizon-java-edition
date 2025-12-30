@@ -42,7 +42,13 @@ public final class LwjglRendererV1 {
         glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
         glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
 
-        long window = glfwCreateWindow(RendererConfig.WINDOW_WIDTH, RendererConfig.WINDOW_HEIGHT, RendererConfig.WINDOW_TITLE, 0, 0);
+        long window = glfwCreateWindow(
+                RendererConfig.WINDOW_WIDTH,
+                RendererConfig.WINDOW_HEIGHT,
+                RendererConfig.WINDOW_TITLE,
+                0,
+                0
+        );
         if (window == 0) throw new IllegalStateException("Failed to create GLFW window");
 
         glfwMakeContextCurrent(window);
@@ -52,14 +58,45 @@ public final class LwjglRendererV1 {
         glEnable(GL_CULL_FACE);
         glCullFace(GL_BACK);
         glFrontFace(GL_CCW);
-
         glEnable(GL_DEPTH_TEST);
+
+        // --------------------------------------------------
+        // Framebuffer size (cached, no per-frame allocation)
+        // --------------------------------------------------
+        final int[] fbW = new int[1];
+        final int[] fbH = new int[1];
+        glfwGetFramebufferSize(window, fbW, fbH);
+        glViewport(0, 0, fbW[0], fbH[0]);
+
+        // --------------------------------------------------
+        // Projection & frustum (cached)
+        // --------------------------------------------------
+        final Matrix4f proj = new Matrix4f();
+        final Matrix4f view = new Matrix4f();
+        final Matrix4f mvp  = new Matrix4f();
+        final FrustumIntersection frustum = new FrustumIntersection();
+
+        Runnable updateProjection = () -> proj.identity().perspective(
+                (float) Math.toRadians(75.0),
+                (float) fbW[0] / (float) fbH[0],
+                0.1f,
+                8000f
+        );
+        updateProjection.run();
+
+        glfwSetFramebufferSizeCallback(window, (win, w, h) -> {
+            fbW[0] = Math.max(1, w);
+            fbH[0] = Math.max(1, h);
+            glViewport(0, 0, fbW[0], fbH[0]);
+            updateProjection.run();
+        });
 
         Atlas atlas = new AtlasLoader().loadFromResources(RendererConfig.ATLAS_JSON);
         BlockRenderMap brm = new BlockRenderMap();
 
         try (
                 SkyRenderer sky = new SkyRenderer(RendererConfig.SKY_VERT, RendererConfig.SKY_FRAG);
+
                 GlShaderProgram shader = new GlShaderProgram(
                         RendererConfig.VOXEL_TILED_VERT,
                         RendererConfig.VOXEL_TILED_FRAG
@@ -90,7 +127,7 @@ public final class LwjglRendererV1 {
                         GlMeshTiled::new
                 )
         ) {
-            // ---- Static uniforms (once) ----
+            // Static uniforms
             setupShaderCommonUniforms(shader);
             setupShaderCommonUniforms(shaderCutout);
             setupShaderCommonUniforms(shaderTranslucent);
@@ -100,8 +137,8 @@ public final class LwjglRendererV1 {
             GreedyChunkMesher mesher = new GreedyChunkMesher();
 
             double lastTime = glfwGetTime();
-            int frames = 0;
             double acc = 0.0;
+            int frames = 0;
 
             while (!glfwWindowShouldClose(window)) {
                 double now = glfwGetTime();
@@ -111,40 +148,30 @@ public final class LwjglRendererV1 {
                 glfwPollEvents();
                 controller.update(dt);
 
-                int[] width = new int[1];
-                int[] height = new int[1];
-                glfwGetFramebufferSize(window, width, height);
-                glViewport(0, 0, width[0], height[0]);
-
-                // ---- Fog + sky ----
+                // -----------------------------
+                // Fog + sky
+                // -----------------------------
                 fogCycle.setRain01(RendererConfig.DEBUG_RAIN);
                 fogCycle.setMist01(RendererConfig.DEBUG_MIST);
                 fogCycle.update((float) now, camera.position.y);
                 sky.render(fogCycle);
 
-                // ---- Camera chunk position ----
+                // -----------------------------
+                // Camera & matrices
+                // -----------------------------
+                view.set(camera.viewMatrix());
+                mvp.set(proj).mul(view);
+                frustum.set(mvp);
+
                 int centerCx = (int) Math.floor(camera.position.x / EngineConfig.CHUNK_SIZE);
                 int centerCz = (int) Math.floor(camera.position.z / EngineConfig.CHUNK_SIZE);
-
-                // ---- Matrices & frustum ----
-                Matrix4f proj = new Matrix4f()
-                    .perspective(
-                        Math.toRadians(75),
-                        (float) width[0] / (float) height[0],
-                        0.1f,
-                        8000f
-                    );
-
-                Matrix4f view = camera.viewMatrix();
-                Matrix4f mvp = new Matrix4f(proj).mul(view);
-                FrustumIntersection frustum = new FrustumIntersection(mvp);
 
                 float minY = EngineConfig.MIN_Y;
                 float maxY = EngineConfig.MAX_Y + 1f;
 
-                // =========================================================
-                // STEP 1 — REQUEST (CPU build scheduling)
-                // =========================================================
+                // -----------------------------
+                // REQUEST
+                // -----------------------------
                 opaqueCache.requestRadiusCulled(
                     centerCx,
                     centerCz,
@@ -165,16 +192,16 @@ public final class LwjglRendererV1 {
                 cutoutCache.touchRadius(centerCx, centerCz, radius);
                 translucentCache.touchRadius(centerCx, centerCz, radius);
 
-                // =========================================================
-                // STEP 2 — UPLOAD (GPU)
-                // =========================================================
+                // -----------------------------
+                // UPLOAD
+                // -----------------------------
                 opaqueCache.uploadReady(RendererConfig.UPLOAD_BUDGET_PER_FRAME);
                 cutoutCache.uploadReady(RendererConfig.UPLOAD_BUDGET_PER_FRAME);
                 translucentCache.uploadReady(RendererConfig.UPLOAD_BUDGET_PER_FRAME);
 
-                // =========================================================
-                // STEP 3 — COLLECT visible chunk keys (ONCE)
-                // =========================================================
+                // -----------------------------
+                // VISIBLE SET (once)
+                // -----------------------------
                 visibleKeys.clear();
                 opaqueCache.collectVisibleKeys(
                     visibleKeys,
@@ -184,9 +211,9 @@ public final class LwjglRendererV1 {
                     maxY
                 );
 
-                // =========================================================
-                // STEP 4 — DRAW
-                // =========================================================
+                // -----------------------------
+                // DRAW
+                // -----------------------------
                 atlasTex.bind(0);
 
                 // ---- PASS 1: OPAQUE ----
@@ -221,14 +248,16 @@ public final class LwjglRendererV1 {
                 glDisable(GL_BLEND);
                 glDepthMask(true);
 
-                // =========================================================
-                // STEP 5 — EVICT
-                // =========================================================
+                // -----------------------------
+                // EVICT
+                // -----------------------------
                 opaqueCache.evictOutside(centerCx, centerCz, evictRadius);
                 cutoutCache.evictOutside(centerCx, centerCz, evictRadius);
                 translucentCache.evictOutside(centerCx, centerCz, evictRadius);
 
-                // ---- FPS ----
+                // -----------------------------
+                // FPS
+                // -----------------------------
                 acc += dt;
                 frames++;
                 if (acc >= 1.0) {
@@ -240,8 +269,8 @@ public final class LwjglRendererV1 {
                         ", trans: [Drawn=" + drawnTrans + ", Count=" + translucentCache.meshCount() + "]" +
                         ", inFlight = " + (opaqueCache.inFlightCount() + cutoutCache.inFlightCount() + translucentCache.inFlightCount()) + ")"
                     );
-                    frames = 0;
                     acc = 0.0;
+                    frames = 0;
                 }
 
                 glfwSwapBuffers(window);
