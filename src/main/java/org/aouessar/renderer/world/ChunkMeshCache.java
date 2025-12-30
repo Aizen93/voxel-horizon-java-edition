@@ -81,60 +81,6 @@ public final class ChunkMeshCache implements AutoCloseable {
 
     /**
      * Render thread only.
-     * Build and upload a small area immediately (prevents “spawn hole”).
-     */
-    public int ensureImmediateArea(int centerCx, int centerCz, int radiusChunks, MeshBuilder builder) {
-        int built = 0;
-
-        for (int dz = -radiusChunks; dz <= radiusChunks; dz++) {
-            for (int dx = -radiusChunks; dx <= radiusChunks; dx++) {
-                int cx = centerCx + dx;
-                int cz = centerCz + dz;
-                long key = ChunkKey.pack(cx, cz);
-
-                Entry e = entries.computeIfAbsent(key, k -> new Entry());
-
-                CompletableFuture<MeshData> f = e.inFlight;
-                if (f != null && !f.isDone()) {
-                    f.cancel(true);
-                    e.inFlight = null; // DO NOT touch inFlight counter here
-                }
-
-                if (e.mesh != null) continue;
-
-                MeshData md = builder.build(cx, cz);
-                if (md == null || md.isEmpty()) continue;
-
-                e.mesh = uploader.upload(md);
-                built++;
-            }
-        }
-
-        return built;
-    }
-
-    /**
-     * Request meshes in a square radius around (centerCx, centerCz).
-     * Submits up to submitBudget jobs per call. Prioritizes close chunks (rings).
-     */
-    public void requestRadius(int centerCx, int centerCz, int radiusChunks, int submitBudget, MeshBuilder builder) {
-        if (submitBudget <= 0) return;
-        if (inFlight.get() >= maxInFlight) return;
-
-        for (int r = 0; r <= radiusChunks && submitBudget > 0; r++) {
-            for (int dx = -r; dx <= r && submitBudget > 0; dx++) {
-                submitBudget = trySubmit(centerCx + dx, centerCz - r, submitBudget, builder);
-                if (r != 0) submitBudget = trySubmit(centerCx + dx, centerCz + r, submitBudget, builder);
-            }
-            for (int dz = -r + 1; dz <= r - 1 && submitBudget > 0; dz++) {
-                submitBudget = trySubmit(centerCx - r, centerCz + dz, submitBudget, builder);
-                if (r != 0) submitBudget = trySubmit(centerCx + r, centerCz + dz, submitBudget, builder);
-            }
-        }
-    }
-
-    /**
-     * Render thread only.
      * Upload completed MeshData into GL mesh (budgeted).
      */
     public int uploadReady(int uploadBudget) {
@@ -158,13 +104,6 @@ public final class ChunkMeshCache implements AutoCloseable {
             uploaded++;
         }
         return uploaded;
-    }
-
-    public void drawAll() {
-        for (Entry e : entries.values()) {
-            IGlMesh m = e.mesh;
-            if (m != null) m.draw();
-        }
     }
 
     /**
@@ -281,103 +220,8 @@ public final class ChunkMeshCache implements AutoCloseable {
     }
 
     /**
-     * Render thread only.
-     * Draw meshes sorted back-to-front (far -> near) relative to camera X/Z.
-     * Intended for TRANSLUCENT pass.
-     */
-    public void drawSorted(float camX, float camZ) {
-        drawList.clear();
-
-        for (var me : entries.entrySet()) {
-            Entry e = me.getValue();
-            IGlMesh m = e.mesh;
-            if (m == null) continue;
-
-            long key = me.getKey();
-            int cx = ChunkKey.unpackX(key);
-            int cz = ChunkKey.unpackZ(key);
-
-            float dx = (cx + 0.5f) - camX;
-            float dz = (cz + 0.5f) - camZ;
-            float d2 = dx * dx + dz * dz;
-
-            drawList.add(new DrawItem(m, d2));
-        }
-
-        drawList.sort(Comparator.comparingDouble(DrawItem::d2).reversed());
-
-        for (DrawItem it : drawList) {
-            it.mesh.draw();
-        }
-    }
-
-    public int drawAllCulled(FrustumIntersection frustum, int chunkSize, float minY, float maxY) {
-        int drawn = 0;
-
-        for (var me : entries.entrySet()) {
-            Entry e = me.getValue();
-            IGlMesh m = e.mesh;
-            if (m == null) continue;
-
-            long key = me.getKey();
-            int cx = ChunkKey.unpackX(key);
-            int cz = ChunkKey.unpackZ(key);
-
-            float minX = (float) cx * chunkSize;
-            float minZ = (float) cz * chunkSize;
-            float maxX = minX + chunkSize;
-            float maxZ = minZ + chunkSize;
-
-            if (!frustum.testAab(minX, minY, minZ, maxX, maxY, maxZ)) continue;
-
-            m.draw();
-            drawn++;
-        }
-
-        return drawn;
-    }
-
-    public int drawSortedCulled(float camX, float camZ, FrustumIntersection frustum, int chunkSize, float minY, float maxY) {
-        drawList.clear();
-
-        for (var me : entries.entrySet()) {
-            Entry e = me.getValue();
-            IGlMesh m = e.mesh;
-            if (m == null) continue;
-
-            long key = me.getKey();
-            int cx = ChunkKey.unpackX(key);
-            int cz = ChunkKey.unpackZ(key);
-
-            float minX = (float) cx * chunkSize;
-            float minZ = (float) cz * chunkSize;
-            float maxX = minX + chunkSize;
-            float maxZ = minZ + chunkSize;
-
-            if (!frustum.testAab(minX, minY, minZ, maxX, maxY, maxZ)) continue;
-
-            // Sorting in chunk units is fine (camX/camZ are chunk-space in your renderer)
-            float dx = (cx + 0.5f) - camX;
-            float dz = (cz + 0.5f) - camZ;
-            float d2 = dx * dx + dz * dz;
-
-            drawList.add(new DrawItem(m, d2));
-        }
-
-        // Far -> near
-        drawList.sort(Comparator.comparingDouble(DrawItem::d2).reversed());
-
-        for (DrawItem it : drawList) {
-            it.mesh.draw();
-        }
-
-        return drawList.size();
-    }
-
-    /**
      * Request meshes in a square radius around (centerCx, centerCz),
      * but only submit jobs for chunks whose AABB intersects the current frustum.
-     *
      * Render thread only (same intended usage as requestRadius).
      */
     public void requestRadiusCulled(
@@ -439,5 +283,80 @@ public final class ChunkMeshCache implements AutoCloseable {
         float maxX = minX + chunkSize;
         float maxZ = minZ + chunkSize;
         return frustum.testAab(minX, minY, minZ, maxX, maxY, maxZ);
+    }
+
+    public int collectVisibleKeys(
+            LongKeyList out,
+            FrustumIntersection frustum,
+            int chunkSize,
+            float minY,
+            float maxY
+    ) {
+        out.clear();
+
+        for (var me : entries.entrySet()) {
+            Entry e = me.getValue();
+            if (e.mesh == null) continue;
+
+            long key = me.getKey();
+            int cx = ChunkKey.unpackX(key);
+            int cz = ChunkKey.unpackZ(key);
+
+            float minX = (float) cx * chunkSize;
+            float minZ = (float) cz * chunkSize;
+            float maxX = minX + chunkSize;
+            float maxZ = minZ + chunkSize;
+
+            if (!frustum.testAab(minX, minY, minZ, maxX, maxY, maxZ)) continue;
+
+            out.add(key);
+        }
+        return out.size();
+    }
+
+    /** Render thread only. Draw exactly the keys collected earlier. */
+    public int drawKeys(LongKeyList keys) {
+        int drawn = 0;
+        for (int i = 0; i < keys.size(); i++) {
+            Entry e = entries.get(keys.get(i));
+            if (e == null) continue;
+            IGlMesh m = e.mesh;
+            if (m == null) continue;
+            m.draw();
+            drawn++;
+        }
+        return drawn;
+    }
+
+    /** Render thread only. Sorted translucent draw using only visible keys (far -> near). */
+    public int drawKeysSorted(LongKeyList keys, float camChunkX, float camChunkZ) {
+        drawList.clear();
+
+        for (int i = 0; i < keys.size(); i++) {
+            long key = keys.get(i);
+            Entry e = entries.get(key);
+            if (e == null) continue;
+            IGlMesh m = e.mesh;
+            if (m == null) continue;
+
+            int cx = ChunkKey.unpackX(key);
+            int cz = ChunkKey.unpackZ(key);
+
+            float dx = (cx + 0.5f) - camChunkX;
+            float dz = (cz + 0.5f) - camChunkZ;
+            float d2 = dx * dx + dz * dz;
+
+            drawList.add(new DrawItem(m, d2));
+        }
+
+        if (drawList.size() <= 1) {
+            if (!drawList.isEmpty()) drawList.get(0).mesh.draw();
+            return drawList.size();
+        }
+
+        drawList.sort(Comparator.comparingDouble(DrawItem::d2).reversed());
+
+        for (DrawItem it : drawList) it.mesh.draw();
+        return drawList.size();
     }
 }

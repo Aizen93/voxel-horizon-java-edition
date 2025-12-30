@@ -9,10 +9,7 @@ import org.aouessar.renderer.gl.GlMeshTiled;
 import org.aouessar.renderer.gl.GlShaderProgram;
 import org.aouessar.renderer.gl.GlTexture2D;
 import org.aouessar.renderer.mesh.GreedyChunkMesher;
-import org.aouessar.renderer.world.BlockRenderMap;
-import org.aouessar.renderer.world.ChunkMeshCache;
-import org.aouessar.renderer.world.FogCycle;
-import org.aouessar.renderer.world.SkyRenderer;
+import org.aouessar.renderer.world.*;
 import org.aouessar.shared.EngineConfig;
 import org.joml.FrustumIntersection;
 import org.joml.Matrix4f;
@@ -30,6 +27,7 @@ public final class LwjglRendererV1 {
     // Keep a little hysteresis to avoid eviction thrashing
     private final int evictRadius;
     private final FogCycle fogCycle = new FogCycle();
+    private final LongKeyList visibleKeys = new LongKeyList(8192);
 
     public LwjglRendererV1(ChunkProvider chunkProvider, int radius) {
         this.chunkProvider = chunkProvider;
@@ -62,34 +60,53 @@ public final class LwjglRendererV1 {
 
         try (
                 SkyRenderer sky = new SkyRenderer(RendererConfig.SKY_VERT, RendererConfig.SKY_FRAG);
-                GlShaderProgram shader = new GlShaderProgram(RendererConfig.VOXEL_TILED_VERT, RendererConfig.VOXEL_TILED_FRAG);
-                GlShaderProgram shaderTranslucent = new GlShaderProgram(RendererConfig.VOXEL_TILED_VERT, RendererConfig.VOXEL_TILED_TRANSLUCENT_FRAG);
-                GlShaderProgram shaderCutout = new GlShaderProgram(RendererConfig.VOXEL_TILED_VERT, RendererConfig.VOXEL_TILED_CUTOUT_FRAG);
+                GlShaderProgram shader = new GlShaderProgram(
+                        RendererConfig.VOXEL_TILED_VERT,
+                        RendererConfig.VOXEL_TILED_FRAG
+                );
+                GlShaderProgram shaderCutout = new GlShaderProgram(
+                        RendererConfig.VOXEL_TILED_VERT,
+                        RendererConfig.VOXEL_TILED_CUTOUT_FRAG
+                );
+                GlShaderProgram shaderTranslucent = new GlShaderProgram(
+                        RendererConfig.VOXEL_TILED_VERT,
+                        RendererConfig.VOXEL_TILED_TRANSLUCENT_FRAG
+                );
                 GlTexture2D atlasTex = new GlTexture2D(RendererConfig.ATLAS_PNG);
 
-                // 3 caches: opaque, cutout, translucent
-                ChunkMeshCache opaqueCache = new ChunkMeshCache(Math.max(1, Runtime.getRuntime().availableProcessors() - 1), 128, GlMeshTiled::new);
-                ChunkMeshCache cutoutCache = new ChunkMeshCache(Math.max(1, Runtime.getRuntime().availableProcessors() - 1), 128, GlMeshTiled::new);
-                ChunkMeshCache translucentCache = new ChunkMeshCache(Math.max(1, Runtime.getRuntime().availableProcessors() - 1), 128, GlMeshTiled::new)
+                ChunkMeshCache opaqueCache = new ChunkMeshCache(
+                        Math.max(1, Runtime.getRuntime().availableProcessors() - 1),
+                        128,
+                        GlMeshTiled::new
+                );
+                ChunkMeshCache cutoutCache = new ChunkMeshCache(
+                        Math.max(1, Runtime.getRuntime().availableProcessors() - 1),
+                        128,
+                        GlMeshTiled::new
+                );
+                ChunkMeshCache translucentCache = new ChunkMeshCache(
+                        Math.max(1, Runtime.getRuntime().availableProcessors() - 1),
+                        128,
+                        GlMeshTiled::new
+                )
         ) {
-            // Common uniforms
+            // ---- Static uniforms (once) ----
             setupShaderCommonUniforms(shader);
             setupShaderCommonUniforms(shaderCutout);
             setupShaderCommonUniforms(shaderTranslucent);
 
             Camera camera = new Camera();
             CameraController controller = new CameraController(camera, window);
-
             GreedyChunkMesher mesher = new GreedyChunkMesher();
 
             double lastTime = glfwGetTime();
-
             int frames = 0;
             double acc = 0.0;
 
             while (!glfwWindowShouldClose(window)) {
                 double now = glfwGetTime();
                 float dt = (float) (now - lastTime);
+                lastTime = now;
 
                 glfwPollEvents();
                 controller.update(dt);
@@ -99,17 +116,17 @@ public final class LwjglRendererV1 {
                 glfwGetFramebufferSize(window, width, height);
                 glViewport(0, 0, width[0], height[0]);
 
+                // ---- Fog + sky ----
                 fogCycle.setRain01(RendererConfig.DEBUG_RAIN);
                 fogCycle.setMist01(RendererConfig.DEBUG_MIST);
                 fogCycle.update((float) now, camera.position.y);
-
                 sky.render(fogCycle);
 
-                // Camera -> chunk center
+                // ---- Camera chunk position ----
                 int centerCx = (int) Math.floor(camera.position.x / EngineConfig.CHUNK_SIZE);
                 int centerCz = (int) Math.floor(camera.position.z / EngineConfig.CHUNK_SIZE);
 
-                // MVP (compute EARLY so we can frustum-cull requests)
+                // ---- Matrices & frustum ----
                 Matrix4f proj = new Matrix4f()
                     .perspective(
                         Math.toRadians(75),
@@ -120,16 +137,17 @@ public final class LwjglRendererV1 {
 
                 Matrix4f view = camera.viewMatrix();
                 Matrix4f mvp = new Matrix4f(proj).mul(view);
-
                 FrustumIntersection frustum = new FrustumIntersection(mvp);
 
-                // World vertical bounds MUST match core EngineConfig
-                final float minY = EngineConfig.MIN_Y;
-                final float maxY = EngineConfig.MAX_Y + 1f;
+                float minY = EngineConfig.MIN_Y;
+                float maxY = EngineConfig.MAX_Y + 1f;
 
-                // ---- REQUEST (frustum-aware) ----
+                // =========================================================
+                // STEP 1 — REQUEST (CPU build scheduling)
+                // =========================================================
                 opaqueCache.requestRadiusCulled(
-                    centerCx, centerCz,
+                    centerCx,
+                    centerCz,
                     radius,
                     RendererConfig.SUBMIT_BUDGET_PER_FRAME,
                     (mx, mz) -> {
@@ -140,50 +158,51 @@ public final class LwjglRendererV1 {
                     },
                     frustum,
                     EngineConfig.CHUNK_SIZE,
-                    minY, maxY
+                    minY,
+                    maxY
                 );
 
-                // Ensure other caches also request around radius for eviction bookkeeping
                 cutoutCache.touchRadius(centerCx, centerCz, radius);
                 translucentCache.touchRadius(centerCx, centerCz, radius);
 
-                // ---- UPLOAD ----
+                // =========================================================
+                // STEP 2 — UPLOAD (GPU)
+                // =========================================================
                 opaqueCache.uploadReady(RendererConfig.UPLOAD_BUDGET_PER_FRAME);
                 cutoutCache.uploadReady(RendererConfig.UPLOAD_BUDGET_PER_FRAME);
                 translucentCache.uploadReady(RendererConfig.UPLOAD_BUDGET_PER_FRAME);
 
-                // ---- EVICT ----
-                opaqueCache.evictOutside(centerCx, centerCz, evictRadius);
-                cutoutCache.evictOutside(centerCx, centerCz, evictRadius);
-                translucentCache.evictOutside(centerCx, centerCz, evictRadius);
+                // =========================================================
+                // STEP 3 — COLLECT visible chunk keys (ONCE)
+                // =========================================================
+                visibleKeys.clear();
+                opaqueCache.collectVisibleKeys(
+                    visibleKeys,
+                    frustum,
+                    EngineConfig.CHUNK_SIZE,
+                    minY,
+                    maxY
+                );
 
+                // =========================================================
+                // STEP 4 — DRAW
+                // =========================================================
                 atlasTex.bind(0);
 
-                // ----------------------------
-                // PASS 1: OPAQUE
-                // ----------------------------
+                // ---- PASS 1: OPAQUE ----
                 glEnable(GL_DEPTH_TEST);
                 glDepthMask(true);
                 glDisable(GL_BLEND);
 
                 applyPerFrameUniforms(shader, camera, mvp, fogCycle);
-                int drawnOpaque = opaqueCache.drawAllCulled(frustum, EngineConfig.CHUNK_SIZE, minY, maxY);
+                int drawnOpaque = opaqueCache.drawKeys(visibleKeys);
 
-                // ----------------------------
-                // PASS 2: CUTOUT (alpha discard)
-                // ----------------------------
-                glEnable(GL_DEPTH_TEST);
-                glDepthMask(true);
-                glDisable(GL_BLEND);
-
+                // ---- PASS 2: CUTOUT ----
                 applyPerFrameUniforms(shaderCutout, camera, mvp, fogCycle);
-                int drawnCutout = cutoutCache.drawAllCulled(frustum, EngineConfig.CHUNK_SIZE, minY, maxY);
+                int drawnCutout = cutoutCache.drawKeys(visibleKeys);
 
-                // ----------------------------
-                // PASS 3: TRANSLUCENT (water/glass)
-                // ----------------------------
-                glEnable(GL_DEPTH_TEST);
-                glDepthMask(false); // don't write depth for blending
+                // ---- PASS 3: TRANSLUCENT ----
+                glDepthMask(false);
                 glEnable(GL_BLEND);
                 glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
@@ -192,14 +211,24 @@ public final class LwjglRendererV1 {
 
                 float camChunkX = camera.position.x / EngineConfig.CHUNK_SIZE;
                 float camChunkZ = camera.position.z / EngineConfig.CHUNK_SIZE;
-                int drawnTrans = translucentCache.drawSortedCulled(camChunkX, camChunkZ, frustum, EngineConfig.CHUNK_SIZE, minY, maxY);
+
+                int drawnTrans = translucentCache.drawKeysSorted(
+                    visibleKeys,
+                    camChunkX,
+                    camChunkZ
+                );
 
                 glDisable(GL_BLEND);
                 glDepthMask(true);
 
-                lastTime = now;
+                // =========================================================
+                // STEP 5 — EVICT
+                // =========================================================
+                opaqueCache.evictOutside(centerCx, centerCz, evictRadius);
+                cutoutCache.evictOutside(centerCx, centerCz, evictRadius);
+                translucentCache.evictOutside(centerCx, centerCz, evictRadius);
 
-                // FPS
+                // ---- FPS ----
                 acc += dt;
                 frames++;
                 if (acc >= 1.0) {
