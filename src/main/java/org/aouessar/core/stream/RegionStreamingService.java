@@ -1,6 +1,7 @@
 package org.aouessar.core.stream;
 
 import org.aouessar.core.api.ChunkProvider;
+import org.aouessar.core.api.WorldReadiness;
 import org.aouessar.core.api.WorldSampler;
 import org.aouessar.core.gen.RegionPipeline;
 import org.aouessar.core.world.*;
@@ -12,8 +13,14 @@ import org.aouessar.shared.EngineConfig;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicLong;
 
-public final class RegionStreamingService implements ChunkProvider, WorldSampler, AutoCloseable {
+public final class RegionStreamingService implements
+        ChunkProvider,
+        WorldSampler,
+        WorldReadiness,
+        org.aouessar.core.api.StreamingRequests,
+        AutoCloseable {
 
     private final long seed;
     private final RegionPipeline pipeline;
@@ -29,6 +36,10 @@ public final class RegionStreamingService implements ChunkProvider, WorldSampler
     // Optional small chunk cache (derived). Keep bounded later.
     private final ConcurrentHashMap<ChunkPos, Chunk> chunkCache = new ConcurrentHashMap<>();
 
+    // Region readiness revisions (monotonic). 0 => not ready.
+    private final ConcurrentHashMap<RegionPos, Long> regionRevisions = new ConcurrentHashMap<>();
+    private final AtomicLong revisionSeq = new AtomicLong(0);
+
     private final ChunkBuilder chunkBuilder = new ChunkBuilder();
 
     public RegionStreamingService(long seed, RegionPipeline pipeline) {
@@ -40,6 +51,54 @@ public final class RegionStreamingService implements ChunkProvider, WorldSampler
         this.pipeline = Objects.requireNonNull(pipeline);
         this.regionExecutor = Objects.requireNonNull(regionExecutor);
     }
+
+    // -----------------------
+    // Public API: WorldReadiness
+    // -----------------------
+
+    @Override
+    public boolean isRegionReady(RegionPos rp) {
+        return ready.containsKey(rp);
+    }
+
+    @Override
+    public boolean isChunkReady(int cx, int cz) {
+        return isRegionReady(WorldGrid.regionOfChunk(cx, cz));
+    }
+
+    @Override
+    public long regionRevision(RegionPos rp) {
+        return regionRevisions.getOrDefault(rp, 0L);
+    }
+
+    @Override
+    public long chunkRevision(int cx, int cz) {
+        return regionRevision(WorldGrid.regionOfChunk(cx, cz));
+    }
+
+    // -----------------------
+    // Public API: StreamingRequests
+    // -----------------------
+
+    @Override
+    public void requestRegion(RegionPos rp) {
+        if (rp == null) return;
+        if (ready.containsKey(rp)) return;
+        scheduleRegion(rp);
+    }
+
+    @Override
+    public void requestChunk(int cx, int cz) {
+        requestRegion(WorldGrid.regionOfChunk(cx, cz));
+    }
+
+    @Override
+    public void requestColumn(int wx, int wz) {
+        int cx = WorldGrid.worldBlockToChunkX(wx);
+        int cz = WorldGrid.worldBlockToChunkZ(wz);
+        requestRegion(WorldGrid.regionOfChunk(cx, cz));
+    }
+
 
     // -----------------------
     // Public API: WorldSampler
@@ -120,19 +179,22 @@ public final class RegionStreamingService implements ChunkProvider, WorldSampler
     private void scheduleRegion(RegionPos rp) {
         // Deduplicate in-flight builds.
         inFlight.computeIfAbsent(rp, pos ->
-                CompletableFuture.supplyAsync(() -> buildRegion(pos), regionExecutor)
-                        .whenComplete((region, err) -> {
-                            inFlight.remove(pos);
-                            if (err == null && region != null) {
-                                ready.put(pos, region);
-                                // Optional: invalidate derived chunk cache for chunks in this region
-                                // For now, keep simple: clear all chunk cache entries for that region.
-                                invalidateChunksInRegion(pos);
-                            } else {
-                                // In production you would log this.
-                                // Keep system alive: next request will reschedule.
-                            }
-                        })
+            CompletableFuture.supplyAsync(() -> buildRegion(pos), regionExecutor)
+                .whenComplete((region, err) -> {
+                    inFlight.remove(pos);
+                    if (err == null && region != null) {
+                        ready.put(pos, region);
+
+                        // mark ready + bump revision (monotonic)
+                        regionRevisions.put(pos, revisionSeq.incrementAndGet());
+
+                        // Optional: invalidate derived chunk cache for chunks in this region
+                        invalidateChunksInRegion(pos);
+                    } else {
+                        // In production you would log this.
+                        // Keep system alive: next request will reschedule.
+                    }
+                })
         );
     }
 
@@ -177,7 +239,7 @@ public final class RegionStreamingService implements ChunkProvider, WorldSampler
         }
     }
 
-    //We can replace it with java.util.concurrent.atomic.AtomicInteger
+    // We can replace it with java.util.concurrent.atomic.AtomicInteger
     private static final class AtomicInteger {
         private int v;
         int incrementAndGet() { return ++v; }

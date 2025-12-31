@@ -1,6 +1,8 @@
 package org.aouessar.renderer;
 
 import org.aouessar.core.api.ChunkProvider;
+import org.aouessar.core.api.WorldAccess;
+import org.aouessar.core.api.WorldReadiness;
 import org.aouessar.renderer.atlas.Atlas;
 import org.aouessar.renderer.atlas.AtlasLoader;
 import org.aouessar.renderer.camera.Camera;
@@ -21,16 +23,29 @@ import static org.lwjgl.opengl.GL11.*;
 
 public final class LwjglRendererV1 {
 
-    private final ChunkProvider chunkProvider;
-    private final int radius; // view radius in chunks
+    @FunctionalInterface
+    public interface FocusConsumer {
+        void update(float worldX, float worldZ);
+    }
 
-    // Keep a little hysteresis to avoid eviction thrashing
-    private final int evictRadius;
+    private final ChunkProvider chunkProvider;
+    private final WorldReadiness readiness; // optional capability
+    private final FocusConsumer prefetch;   // app-owned policy hook (optional)
+
+    private final int radius;      // view radius in chunks
+    private final int evictRadius; // hysteresis
+
     private final FogCycle fogCycle = new FogCycle();
     private final LongKeyList visibleKeys = new LongKeyList(8192);
 
-    public LwjglRendererV1(ChunkProvider chunkProvider, int radius) {
-        this.chunkProvider = chunkProvider;
+    public LwjglRendererV1(WorldAccess world, int radius) {
+        this(world, null, radius);
+    }
+
+    public LwjglRendererV1(WorldAccess world, FocusConsumer prefetch, int radius) {
+        this.chunkProvider = world.chunkProvider();
+        this.readiness = world.worldReadiness(); // always present in your WorldAccess
+        this.prefetch = prefetch;
         this.radius = radius;
         this.evictRadius = radius + 2;
     }
@@ -148,6 +163,11 @@ public final class LwjglRendererV1 {
                 glfwPollEvents();
                 controller.update(dt);
 
+                // App-owned streaming prefetch (optional, but recommended)
+                if (prefetch != null) {
+                    prefetch.update(camera.position.x, camera.position.z);
+                }
+
                 // -----------------------------
                 // Fog + sky
                 // -----------------------------
@@ -178,6 +198,12 @@ public final class LwjglRendererV1 {
                     radius,
                     RendererConfig.SUBMIT_BUDGET_PER_FRAME,
                     (mx, mz) -> {
+                        // IMPORTANT: don't mesh/cached placeholders
+                        // (requires ChunkMeshCache to treat null/empty as "skip")
+                        if (readiness != null && !readiness.isChunkReady(mx, mz)) {
+                            return null;
+                        }
+
                         var meshes = mesher.buildChunkMeshes(chunkProvider, atlas, brm, mx, mz);
                         cutoutCache.requestOne(mx, mz, meshes.cutout());
                         translucentCache.requestOne(mx, mz, meshes.translucent());

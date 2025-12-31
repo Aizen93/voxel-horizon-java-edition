@@ -1,6 +1,6 @@
 package org.aouessar.app;
 
-import org.aouessar.core.api.ChunkProvider;
+import org.aouessar.core.api.WorldAccess;
 import org.aouessar.core.gen.RegionPipeline;
 import org.aouessar.core.gen.impl.BiomeDecorator;
 import org.aouessar.core.gen.impl.DefaultBiomeGenerator;
@@ -25,10 +25,21 @@ public final class Main {
                 new DefaultStructureBuilder()
         );
 
-        // Core streaming service (ChunkProvider)
-        ChunkProvider chunkProvider = new RegionStreamingService(seed, pipeline);
+        // Core streaming service (concrete lives ONLY in app)
+        RegionStreamingService core = new RegionStreamingService(seed, pipeline);
+
+        // WorldAccess = single boundary object for everything outside core
+        WorldAccess world = new WorldAccess(
+            core, // ChunkProvider
+            core, // WorldSampler
+            core, // WorldReadiness
+            core  // StreamingRequests
+        );
+
+        // App-owned prefetch policy (no renderer->core coupling)
+        WorldPrefetcher prefetcher = new WorldPrefetcher(world.streamingRequests(), 40);
 
         // Renderer v1 (near-field)
-        new LwjglRendererV1(chunkProvider, 32).run();
+        new LwjglRendererV1(world, prefetcher::update, 32).run();
     }
 }
