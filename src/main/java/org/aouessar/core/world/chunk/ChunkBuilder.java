@@ -54,30 +54,20 @@ public final class ChunkBuilder {
                 }
 
                 // ---- structures (vegetation) ----
-                for (StructureMap.Placement p : layers.structureMap().placements()) {
-                    // filter to this chunk
-                    if (Math.floorDiv(p.wx(), 16) != cx || Math.floorDiv(p.wz(), 16) != cz) {
-                        continue;
-                    }
-
-                    int lxS = Math.floorMod(p.wx(), 16);
-                    int lzS = Math.floorMod(p.wz(), 16);
+                // ---- structures (vegetation) ----
+                for (StructureMap.Placement p : layers.structureMap().placementsInChunk(cx, cz)) {
+                    int lxS = WorldGrid.worldBlockToLocalInChunkX(p.wx());
+                    int lzS = WorldGrid.worldBlockToLocalInChunkZ(p.wz());
                     int wyS = p.wy();
 
-                    // bounds safety (paranoid but correct)
-                    if (wyS < EngineConfig.MIN_Y || wyS > EngineConfig.MAX_Y) {
-                        continue;
-                    }
+                    // bounds safety
+                    if (wyS < EngineConfig.MIN_Y || wyS > EngineConfig.MAX_Y) continue;
 
-                    // must be on grass
-                    if (chunk.getBlock(lxS, wyS - 1, lzS) != Blocks.GRASS) {
-                        continue;
-                    }
+                    // must be on grass (your current rule)
+                    if (chunk.getBlock(lxS, wyS - 1, lzS) != Blocks.GRASS) continue;
 
-                    // place bush
                     chunk.setBlock(lxS, wyS, lzS, p.structureId());
                 }
-
             }
         }
 
