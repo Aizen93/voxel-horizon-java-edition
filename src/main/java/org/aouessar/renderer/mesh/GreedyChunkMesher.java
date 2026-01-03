@@ -533,7 +533,10 @@ public final class GreedyChunkMesher {
     }
 
     private static boolean isBillboard(short blockId) {
-        return blockId == Blocks.BUSH; // extend later
+        return switch (blockId) {
+            case Blocks.BUSH, Blocks.TALL_GRASS, Blocks.FLOWER_YELLOW, Blocks.FLOWER_RED -> true;
+            default -> false;
+        };
     }
 
     private static short sampleForGreedy(BlockAccessor accessor, int wx, int wy, int wz) {

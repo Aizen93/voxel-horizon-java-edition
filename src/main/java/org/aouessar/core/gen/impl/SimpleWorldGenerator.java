@@ -13,24 +13,115 @@ public final class SimpleWorldGenerator implements WorldGenerator {
         int n = rect.sizeX * rect.sizeZ;
         int[] heights = new int[n];
 
-        // Deterministic noise per region/seed
-        FastNoiseLite fn = new FastNoiseLite((int) (seed ^ 0x9E3779B97F4A7C15L));
-        fn.SetNoiseType(FastNoiseLite.NoiseType.OpenSimplex2);
-        fn.SetFrequency(0.0015f);
+        // --- Noise stack (all deterministic from seed) ---
+        FastNoiseLite warp = new FastNoiseLite(mixSeed(seed, 0xA1B2C3D4));
+        warp.SetNoiseType(FastNoiseLite.NoiseType.OpenSimplex2);
+        warp.SetFrequency(EngineConfig.TERRAIN_WARP_FREQ);
+        warp.SetFractalType(FastNoiseLite.FractalType.DomainWarpProgressive);
+        warp.SetFractalOctaves(3);
+        warp.SetFractalGain(0.5f);
+        warp.SetFractalLacunarity(2.0f);
+        warp.SetDomainWarpAmp(EngineConfig.TERRAIN_WARP_AMP_BLOCKS);
 
-        // Very basic starter: continents-ish + mountains-ish
-        // (You will replace with your real terrain stack later.)
+        FastNoiseLite continents = new FastNoiseLite(mixSeed(seed, 0x11111111));
+        continents.SetNoiseType(FastNoiseLite.NoiseType.OpenSimplex2);
+        continents.SetFrequency(EngineConfig.TERRAIN_CONTINENT_FREQ);
+        continents.SetFractalType(FastNoiseLite.FractalType.FBm);
+        continents.SetFractalOctaves(5);
+        continents.SetFractalGain(0.5f);
+        continents.SetFractalLacunarity(2.0f);
+
+        FastNoiseLite large = new FastNoiseLite(mixSeed(seed, 0x12121212));
+        large.SetNoiseType(FastNoiseLite.NoiseType.OpenSimplex2);
+        large.SetFrequency(EngineConfig.TERRAIN_LARGE_FREQ);
+        large.SetFractalType(FastNoiseLite.FractalType.FBm);
+        large.SetFractalOctaves(4);
+        large.SetFractalGain(0.5f);
+        large.SetFractalLacunarity(2.0f);
+
+        FastNoiseLite erosion = new FastNoiseLite(mixSeed(seed, 0x22222222));
+        erosion.SetNoiseType(FastNoiseLite.NoiseType.OpenSimplex2);
+        erosion.SetFrequency(EngineConfig.TERRAIN_LARGE_FREQ);
+        erosion.SetFractalType(FastNoiseLite.FractalType.FBm);
+        erosion.SetFractalOctaves(4);
+        erosion.SetFractalGain(0.5f);
+        erosion.SetFractalLacunarity(2.0f);
+
+        FastNoiseLite ridges = new FastNoiseLite(mixSeed(seed, 0x33333333));
+        ridges.SetNoiseType(FastNoiseLite.NoiseType.OpenSimplex2);
+        ridges.SetFrequency(EngineConfig.TERRAIN_RIDGE_FREQ);
+        ridges.SetFractalType(FastNoiseLite.FractalType.Ridged);
+        ridges.SetFractalOctaves(4);
+        ridges.SetFractalGain(0.55f);
+        ridges.SetFractalLacunarity(2.05f);
+
+        FastNoiseLite detail = new FastNoiseLite(mixSeed(seed, 0x44444444));
+        detail.SetNoiseType(FastNoiseLite.NoiseType.OpenSimplex2);
+        detail.SetFrequency(EngineConfig.TERRAIN_DETAIL_FREQ);
+        detail.SetFractalType(FastNoiseLite.FractalType.FBm);
+        detail.SetFractalOctaves(6);
+        detail.SetFractalGain(0.5f);
+        detail.SetFractalLacunarity(2.0f);
+
+        final int sea = EngineConfig.SEA_LEVEL;
+
         int i = 0;
         for (int z = 0; z < rect.sizeZ; z++) {
-            int wz = rect.minZ + z;
+            int wz0 = rect.minZ + z;
             for (int x = 0; x < rect.sizeX; x++) {
-                int wx = rect.minX + x;
+                int wx0 = rect.minX + x;
 
-                float n0 = fn.GetNoise(wx, wz);           // [-1..1]
-                float base = (n0 + 1f) * 0.5f;            // [0..1]
+                // Domain-warped sampling coords
+                FastNoiseLite.Vector2 p = new FastNoiseLite.Vector2(wx0, wz0);
+                warp.DomainWarp(p);
+                float wx = p.x;
+                float wz = p.y;
 
-                int h = EngineConfig.SEA_LEVEL + Math.round((base - 0.5f) * 120f);
-                // Clamp to Minecraft vertical bounds
+                // Fields in [-1..1]
+                float c = continents.GetNoise(wx, wz); // continentalness
+                float L = large.GetNoise(wx, wz);      // large-scale elevation
+                float e = erosion.GetNoise(wx, wz);    // erosion mask
+                float r = ridges.GetNoise(wx, wz);     // ridges
+                float d = detail.GetNoise(wx, wz);     // detail
+
+                // Land factor [0..1] with smooth coasts
+                float land = smoothstep(EngineConfig.TERRAIN_COAST_OCEAN, EngineConfig.TERRAIN_COAST_LAND, c);
+
+                // Inland uplift
+                float inland = smoothstep(EngineConfig.TERRAIN_INLAND_START, EngineConfig.TERRAIN_INLAND_FULL, c);
+                float uplift = inland * inland * EngineConfig.TERRAIN_BASE_LAND_UPLIFT;
+
+                // Rolling elevation + hills on land
+                float rolling = L * EngineConfig.TERRAIN_LARGE_AMPLITUDE * land;
+                float hills   = d * EngineConfig.TERRAIN_HILL_AMPLITUDE * land;
+
+                // Mountain mask
+                float ridge01 = clamp01(Math.abs(r));
+                float ridgePresence = smoothstep(EngineConfig.TERRAIN_RIDGE_MIN, EngineConfig.TERRAIN_RIDGE_MAX, ridge01);
+
+                float erosion01 = (e + 1.0f) * 0.5f;
+                float erosionSuppress = 1.0f - smoothstep(EngineConfig.TERRAIN_EROSION_MIN, EngineConfig.TERRAIN_EROSION_MAX, erosion01);
+
+                float mountainMask = land * ridgePresence * erosionSuppress;
+
+                float mountains = (float) Math.pow(ridge01, EngineConfig.TERRAIN_RIDGE_EXP)
+                        * EngineConfig.TERRAIN_MOUNTAIN_AMPLITUDE * mountainMask;
+
+                // Ocean depth
+                float offshore = 1.0f - land;
+                float oceanDepth = offshore * (EngineConfig.TERRAIN_OCEAN_BASE_DEPTH + offshore * EngineConfig.TERRAIN_OCEAN_EXTRA_DEPTH);
+                oceanDepth += offshore * (d * EngineConfig.TERRAIN_SEABED_VARIATION);
+
+                float height;
+                if (land < 0.5f) {
+                    height = sea - oceanDepth + (L * EngineConfig.TERRAIN_OCEAN_LARGE_VARIATION);
+                } else {
+                    height = sea + uplift + rolling + hills + mountains;
+                }
+
+                int h = Math.round(height);
+
+                // Clamp to your world bounds
                 if (h < EngineConfig.MIN_Y) h = EngineConfig.MIN_Y;
                 if (h > EngineConfig.MAX_Y) h = EngineConfig.MAX_Y;
 
@@ -39,5 +130,29 @@ public final class SimpleWorldGenerator implements WorldGenerator {
         }
 
         return new Heightmap(rect, heights);
+    }
+
+    private static float smoothstep(float edge0, float edge1, float x) {
+        float t = (x - edge0) / (edge1 - edge0);
+        if (t < 0f) t = 0f;
+        if (t > 1f) t = 1f;
+        return t * t * (3f - 2f * t);
+    }
+
+    private static float clamp01(float v) {
+        if (v < 0f) return 0f;
+        if (v > 1f) return 1f;
+        return v;
+    }
+
+    /**
+     * Stable 64->32 seed mixing. Keeps worlds deterministic and avoids correlated noise instances.
+     */
+    private static int mixSeed(long seed, int salt) {
+        long z = seed + 0x9E3779B97F4A7C15L * (long) salt;
+        z = (z ^ (z >>> 30)) * 0xBF58476D1CE4E5B9L;
+        z = (z ^ (z >>> 27)) * 0x94D049BB133111EBL;
+        z = (z ^ (z >>> 31));
+        return (int) z;
     }
 }
