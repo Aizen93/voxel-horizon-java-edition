@@ -53,6 +53,10 @@ public final class DefaultBiomeGenerator implements BiomeGenerator {
         blendSel.SetNoiseType(FastNoiseLite.NoiseType.OpenSimplex2);
         blendSel.SetFrequency(EngineConfig.BIOME_BLEND_SELECTOR_FREQ);
 
+        FastNoiseLite jungleSel = new FastNoiseLite(mixSeed(seed, 0xC0FFEE11));
+        jungleSel.SetNoiseType(FastNoiseLite.NoiseType.OpenSimplex2);
+        jungleSel.SetFrequency(EngineConfig.BIOME_JUNGLE_SELECTOR_FREQ);
+
 
         int i = 0;
         for (int z = 0; z < rect.sizeZ; z++) {
@@ -85,6 +89,23 @@ public final class DefaultBiomeGenerator implements BiomeGenerator {
                 if (aboveSea > 1f) aboveSea = 1f;
                 temp = clamp01(temp - aboveSea * EngineConfig.BIOME_ALTITUDE_COOLING);
 
+                // ---- Jungle hard override (coherent patches, only when climate is clearly jungle) ----
+                float jungleSuit =
+                        smoothstep(EngineConfig.BIOME_JUNGLE_TEMP_MIN,  0.92f, temp) *
+                                smoothstep(EngineConfig.BIOME_JUNGLE_HUMID_MIN, 0.92f, humid);
+
+                if (jungleSuit > 0.0f) {
+                    float jRnd = to01(jungleSel.GetNoise(wx0, wz0)); // coherent selector
+                    // Higher jungleSuit => more likely to become jungle inside suitable area
+                    float pJ = jungleSuit * EngineConfig.BIOME_JUNGLE_COVERAGE;
+
+                    // optional: avoid tiny jungle on beaches
+                    if (h > EngineConfig.SEA_LEVEL + 2 && jRnd < pJ) {
+                        biomes[i++] = EngineConfig.BIOME_JUNGLE;
+                        continue;
+                    }
+                }
+
                 // Pick 2 best biome candidates by distance in climate space
                 short b0 = EngineConfig.BIOME_PLAINS;
                 short b1 = EngineConfig.BIOME_PLAINS;
@@ -95,11 +116,10 @@ public final class DefaultBiomeGenerator implements BiomeGenerator {
                 {
                     float sc = score(temp, humid, weird, 0.50f, 0.45f, 0.50f, 0.0f);
                     if (sc < s0) {
-                        s0 = sc;
-                    }
-                    else if (sc < s1) {
-                        s1 = sc;
-                        b1 = EngineConfig.BIOME_PLAINS;
+                        s1 = s0;  b1 = b0;
+                        s0 = sc;  b0 = EngineConfig.BIOME_PLAINS;
+                    } else if (sc < s1) {
+                        s1 = sc;  b1 = EngineConfig.BIOME_PLAINS;
                     }
                 }
 
@@ -175,6 +195,19 @@ public final class DefaultBiomeGenerator implements BiomeGenerator {
                     else if (sc < s1) {
                         s1 = sc;
                         b1 = EngineConfig.BIOME_SWAMP;
+                    }
+                }
+
+                // jungle: hot + very humid (bias helps it win when suitable)
+                {
+                    float sc = score(temp, humid, weird, 0.78f, 0.82f, 0.50f, 0.0f);
+                    sc -= jungleSuit * EngineConfig.BIOME_JUNGLE_BIAS;
+
+                    if (sc < s0) {
+                        s1 = s0; b1 = b0;
+                        s0 = sc; b0 = EngineConfig.BIOME_JUNGLE;
+                    } else if (sc < s1) {
+                        s1 = sc; b1 = EngineConfig.BIOME_JUNGLE;
                     }
                 }
 

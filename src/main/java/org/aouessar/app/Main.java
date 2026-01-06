@@ -14,7 +14,7 @@ import org.aouessar.renderer.LwjglRendererV1;
 public final class Main {
 
     public static void main(String[] args) {
-        long seed = 905282311L;
+        long seed = 548511558115960005L;
 
         // Core pipeline (deterministic, region-based)
         RegionPipeline pipeline = new DefaultRegionPipeline(
@@ -29,6 +29,6 @@ public final class Main {
         ChunkProvider chunkProvider = new RegionStreamingService(seed, pipeline);
 
         // Renderer v1 (near-field)
-        new LwjglRendererV1(chunkProvider, 52).run();
+        new LwjglRendererV1(chunkProvider, 42).run();
     }
 }

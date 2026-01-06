@@ -169,10 +169,19 @@ public final class ChunkBuilder {
     // -------------------------------------------------------------------------
 
     private static List<StructureMap.Placement> filterPlacementsForChunk(StructureMap map, int cx, int cz) {
-        // You currently expose placements() iterable; we filter once here.
+        final int halo = 1; // one chunk around is enough for your current canopies
+
+        int minCx = cx - halo;
+        int maxCx = cx + halo;
+        int minCz = cz - halo;
+        int maxCz = cz + halo;
+
         List<StructureMap.Placement> out = new ArrayList<>();
         for (StructureMap.Placement p : map.placements()) {
-            if (Math.floorDiv(p.wx(), 16) == cx && Math.floorDiv(p.wz(), 16) == cz) {
+            int pcx = Math.floorDiv(p.wx(), EngineConfig.CHUNK_SIZE);
+            int pcz = Math.floorDiv(p.wz(), EngineConfig.CHUNK_SIZE);
+
+            if (pcx >= minCx && pcx <= maxCx && pcz >= minCz && pcz <= maxCz) {
                 out.add(p);
             }
         }
@@ -206,7 +215,8 @@ public final class ChunkBuilder {
         }
 
         // --- Single-block placements (vegetation) ---
-        if (marker == Blocks.TALL_GRASS || marker == Blocks.FLOWER_RED || marker == Blocks.FLOWER_YELLOW || marker == Blocks.BUSH) {
+        if (marker == Blocks.TALL_GRASS || marker == Blocks.DRY_WHEAT ||
+                marker == Blocks.FLOWER_RED || marker == Blocks.FLOWER_YELLOW || marker == Blocks.BUSH) {
             // Plants should grow on grass-like tops (not podzol, not dirt)
             if (!isGrassLike(ground)) return;
 
@@ -229,7 +239,28 @@ public final class ChunkBuilder {
             return;
         }
 
-        // Fallback: treat structureId as a direct block id (your current behavior)
+        if (marker == Blocks.STRUCT_ACACIA_TREE) {
+            if (!isSoil(ground)) return;
+            int h = 4 + (hash8(p.wx(), p.wz()) % 3); // 4..6
+            placeAcaciaTreePart(chunk, cx, cz, p.wx(), wy, p.wz(), h);
+            return;
+        }
+
+        if (marker == Blocks.STRUCT_JUNGLE_TREE) {
+            if (!isSoil(ground)) return;
+            int h = 7 + (hash8(p.wx(), p.wz()) % 6); // 7..12
+            placeJungleTreePart(chunk, cx, cz, p.wx(), wy, p.wz(), h);
+            return;
+        }
+
+        if (marker == Blocks.STRUCT_MEGA_JUNGLE) {
+            if (!isSoil(ground)) return;
+            int h = 15 + (hash8(p.wx(), p.wz()) % 9); // 18..27
+            placeSpruceTree(chunk, cx, cz, p.wx(), wy, p.wz(), h);
+            return;
+        }
+
+        // Fallback: treat structureId as a direct block id
         chunk.setBlock(lx, wy, lz, marker);
     }
 
@@ -251,18 +282,18 @@ public final class ChunkBuilder {
                 if (dist2 > 6) continue;
 
                 // two layers of leaves
-                setLeavesIfAir(chunk, cx, cz, wxBase + dx, crownY,     wzBase + dz);
-                setLeavesIfAir(chunk, cx, cz, wxBase + dx, crownY + 1, wzBase + dz);
+                setLeavesIfAir(chunk, cx, cz, wxBase + dx, crownY,     wzBase + dz, Blocks.OAK_LEAVES);
+                setLeavesIfAir(chunk, cx, cz, wxBase + dx, crownY + 1, wzBase + dz, Blocks.OAK_LEAVES);
 
                 // top cap (smaller)
                 if (dist2 <= 2) {
-                    setLeavesIfAir(chunk, cx, cz, wxBase + dx, crownY + 2, wzBase + dz);
+                    setLeavesIfAir(chunk, cx, cz, wxBase + dx, crownY + 2, wzBase + dz, Blocks.OAK_LEAVES);
                 }
             }
         }
     }
 
-    private static void setLeavesIfAir(Chunk chunk, int cx, int cz, int wx, int wy, int wz) {
+    private static void setLeavesIfAir(Chunk chunk, int cx, int cz, int wx, int wy, int wz, short leavesId) {
         if (wy < EngineConfig.MIN_Y || wy > EngineConfig.MAX_Y) return;
         if (!isInChunk(wx, wz, cx, cz)) return;
 
@@ -270,9 +301,10 @@ public final class ChunkBuilder {
         int lz = Math.floorMod(wz, 16);
 
         if (chunk.getBlock(lx, wy, lz) == Blocks.AIR) {
-            chunk.setBlock(lx, wy, lz, Blocks.OAK_LEAVES);
+            chunk.setBlock(lx, wy, lz, leavesId);
         }
     }
+
 
     private static void setIfInThisChunk(Chunk chunk, int cx, int cz, int wx, int wy, int wz, short id) {
         if (wy < EngineConfig.MIN_Y || wy > EngineConfig.MAX_Y) return;
@@ -315,4 +347,164 @@ public final class ChunkBuilder {
         return id == Blocks.SAND ||
                 id == Blocks.DESERT_SAND;
     }
+
+    private static void placeAcaciaTreePart(Chunk chunk, int cx, int cz, int wxBase, int wyBase, int wzBase, int trunkH) {
+        int dir = hash8(wxBase, wzBase) & 3; // 0..3
+        int bendStart = trunkH - 2;
+
+        // trunk straight then slight bend
+        int wx = wxBase;
+        int wz = wzBase;
+
+        for (int dy = 0; dy < trunkH; dy++) {
+            if (dy >= bendStart) {
+                switch (dir) {
+                    case 0 -> wx++;
+                    case 1 -> wx--;
+                    case 2 -> wz++;
+                    default -> wz--;
+                }
+            }
+            setIfInThisChunk(chunk, cx, cz, wx, wyBase + dy, wz, Blocks.ACACIA_LOG);
+        }
+
+        // flat-ish canopy
+        int crownY = wyBase + trunkH;
+        for (int dz = -2; dz <= 2; dz++) {
+            for (int dx = -2; dx <= 2; dx++) {
+                int dist2 = dx * dx + dz * dz;
+                if (dist2 > 5) continue;
+                setLeavesIfAir(chunk, cx, cz, wx + dx, crownY, wz + dz, Blocks.ACACIA_LEAVES);
+                if (dist2 <= 2) setLeavesIfAir(chunk, cx, cz, wx + dx, crownY + 1, wz + dz, Blocks.ACACIA_LEAVES);
+            }
+        }
+    }
+
+    private static void placeJungleTreePart(Chunk chunk, int cx, int cz, int wxBase, int wyBase, int wzBase, int trunkH) {
+        // tall straight trunk
+        for (int dy = 0; dy < trunkH; dy++) {
+            setIfInThisChunk(chunk, cx, cz, wxBase, wyBase + dy, wzBase, Blocks.JUNGLE_LOG);
+        }
+
+        // leafy crown (bigger than oak)
+        int crownY = wyBase + trunkH - 1;
+        for (int dz = -3; dz <= 3; dz++) {
+            for (int dx = -3; dx <= 3; dx++) {
+                int dist2 = dx * dx + dz * dz;
+                if (dist2 > 10) continue;
+                setLeavesIfAir(chunk, cx, cz, wxBase + dx, crownY, wzBase + dz, Blocks.JUNGLE_LEAVES);
+                setLeavesIfAir(chunk, cx, cz, wxBase + dx, crownY + 1, wzBase + dz, Blocks.JUNGLE_LEAVES);
+                if (dist2 <= 4) setLeavesIfAir(chunk, cx, cz, wxBase + dx, crownY + 2, wzBase + dz, Blocks.JUNGLE_LEAVES);
+            }
+        }
+    }
+
+    private static void placeMegaJunglePartNormal(Chunk chunk, int cx, int cz, int wxBase, int wyBase, int wzBase, int trunkH) {
+        // 2x2 trunk (anchor at wxBase,wzBase)
+        for (int dy = 0; dy < trunkH; dy++) {
+            setIfInThisChunk(chunk, cx, cz, wxBase,     wyBase + dy, wzBase,     Blocks.JUNGLE_LOG);
+            setIfInThisChunk(chunk, cx, cz, wxBase + 1, wyBase + dy, wzBase,     Blocks.JUNGLE_LOG);
+            setIfInThisChunk(chunk, cx, cz, wxBase,     wyBase + dy, wzBase + 1, Blocks.JUNGLE_LOG);
+            setIfInThisChunk(chunk, cx, cz, wxBase + 1, wyBase + dy, wzBase + 1, Blocks.JUNGLE_LOG);
+        }
+
+        // huge canopy
+        int crownY = wyBase + trunkH;
+        for (int dz = -5; dz <= 5; dz++) {
+            for (int dx = -5; dx <= 5; dx++) {
+                int dist2 = dx * dx + dz * dz;
+                if (dist2 > 24) continue;
+                setLeavesIfAir(chunk, cx, cz, wxBase + dx, crownY,     wzBase + dz, Blocks.JUNGLE_LEAVES);
+                setLeavesIfAir(chunk, cx, cz, wxBase + dx, crownY + 1, wzBase + dz, Blocks.JUNGLE_LEAVES);
+                if (dist2 <= 12) setLeavesIfAir(chunk, cx, cz, wxBase + dx, crownY + 2, wzBase + dz, Blocks.JUNGLE_LEAVES);
+            }
+        }
+    }
+
+    private static void placeSpruceTree(
+            Chunk chunk,
+            int cx, int cz,
+            int wxBase, int wyBase, int wzBase,
+            int trunkH
+    ) {
+        // Trunk
+        for (int dy = 0; dy < trunkH; dy++) {
+            setIfInThisChunk(chunk, cx, cz, wxBase, wyBase + dy, wzBase, Blocks.JUNGLE_LOG);
+        }
+
+        int topY = wyBase + trunkH - 1;
+
+        // 4 leaves around the top log (perfectly symmetric)
+        setLeavesIfAir(chunk, cx, cz, wxBase + 1, topY, wzBase,     Blocks.JUNGLE_LEAVES);
+        setLeavesIfAir(chunk, cx, cz, wxBase - 1, topY, wzBase,     Blocks.JUNGLE_LEAVES);
+        setLeavesIfAir(chunk, cx, cz, wxBase,     topY, wzBase + 1, Blocks.JUNGLE_LEAVES);
+        setLeavesIfAir(chunk, cx, cz, wxBase,     topY, wzBase - 1, Blocks.JUNGLE_LEAVES);
+
+        // Optional tip
+        setLeavesIfAir(chunk, cx, cz, wxBase, topY + 1, wzBase, Blocks.JUNGLE_LEAVES);
+
+        // Thin pyramid foliage (radius never exceeds 3)
+        int foliageBottomY = wyBase + Math.max(2, trunkH / 3);
+
+        int layer = 0;
+        for (int y = topY - 1; y >= foliageBottomY; y--, layer++) {
+            int t = (topY - 1) - y;      // 0..down from just under top
+
+            // Grow slowly: 1,1,2,2,3,3,3,3...
+            int radius = 1 + (t / 2);
+            if (radius > 3) radius = 3;
+
+            // (Optional) make it a bit thinner sometimes while staying symmetric
+            if (layer % 4 == 3 && radius > 1) radius--;
+
+            placeSpruceLayerSymmetric(chunk, cx, cz, wxBase, y, wzBase, radius, Blocks.JUNGLE_LEAVES);
+        }
+    }
+
+    /**
+     * Perfectly mirrored layer using symmetric masks, max radius = 3.
+     * This prevents "one side thicker than the other".
+     */
+    private static void placeSpruceLayerSymmetric(
+            Chunk chunk,
+            int cx, int cz,
+            int wxC, int wy, int wzC,
+            int radius,
+            short leavesId
+    ) {
+        // Masks are offsets (dx,dz). All are explicitly symmetric.
+        // radius 1 => plus + center (no diagonals) => thin look
+        // radius 2 => diamond-ish ring (still trimmed corners)
+        // radius 3 => fuller but still capped and symmetric
+        final int[][] OFFSETS;
+        switch (radius) {
+            case 1 -> OFFSETS = new int[][]{
+                    {0,0},
+                    {1,0},{-1,0},{0,1},{0,-1}
+            };
+            case 2 -> OFFSETS = new int[][]{
+                    {0,0},
+                    {1,0},{-1,0},{0,1},{0,-1},
+                    {2,0},{-2,0},{0,2},{0,-2},
+                    {1,1},{1,-1},{-1,1},{-1,-1}
+            };
+            default -> OFFSETS = new int[][]{
+                    {0,0},
+                    {1,0},{-1,0},{0,1},{0,-1},
+                    {2,0},{-2,0},{0,2},{0,-2},
+                    {3,0},{-3,0},{0,3},{0,-3},
+                    {1,1},{1,-1},{-1,1},{-1,-1},
+                    {2,1},{2,-1},{-2,1},{-2,-1},
+                    {1,2},{-1,2},{1,-2},{-1,-2}
+            };
+        }
+
+        for (int[] o : OFFSETS) {
+            int dx = o[0];
+            int dz = o[1];
+            setLeavesIfAir(chunk, cx, cz, wxC + dx, wy, wzC + dz, leavesId);
+        }
+    }
+
+
 }

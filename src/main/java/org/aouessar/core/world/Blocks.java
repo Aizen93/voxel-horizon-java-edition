@@ -41,6 +41,20 @@ public final class Blocks {
     public static final short SNOW_GRASS = 25;
     public static final short DRY_GRASS = 26;
 
+    public static final short DRY_WHEAT = 27;
+
+    // tree types
+    public static final short ACACIA_LOG = 28;
+    public static final short ACACIA_LEAVES = 29;
+
+    public static final short JUNGLE_LOG = 30;
+    public static final short JUNGLE_LEAVES = 31;
+
+    // structure markers
+    public static final short STRUCT_ACACIA_TREE = 101;
+    public static final short STRUCT_JUNGLE_TREE = 102;
+    public static final short STRUCT_MEGA_JUNGLE = 103;
+
 
     // "structure marker ids" (optional): placements can use these ids to request multi-block placement
     public static final short STRUCT_OAK_TREE = 100;
@@ -49,7 +63,9 @@ public final class Blocks {
         return switch (blockId) {
             case WATER, GLASS -> RenderLayer.TRANSLUCENT;
 
-            case LEAVES, OAK_LEAVES, BUSH, TALL_GRASS, FLOWER_RED, FLOWER_YELLOW -> RenderLayer.CUTOUT;
+            case LEAVES, OAK_LEAVES, BUSH, TALL_GRASS,
+                 FLOWER_RED, FLOWER_YELLOW, DRY_WHEAT,
+                 JUNGLE_LEAVES, ACACIA_LEAVES -> RenderLayer.CUTOUT;
 
             default -> RenderLayer.OPAQUE;
         };

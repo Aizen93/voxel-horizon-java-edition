@@ -534,7 +534,7 @@ public final class GreedyChunkMesher {
 
     private static boolean isBillboard(short blockId) {
         return switch (blockId) {
-            case Blocks.BUSH, Blocks.TALL_GRASS, Blocks.FLOWER_YELLOW, Blocks.FLOWER_RED -> true;
+            case Blocks.BUSH, Blocks.TALL_GRASS, Blocks.FLOWER_YELLOW, Blocks.FLOWER_RED, Blocks.DRY_WHEAT -> true;
             default -> false;
         };
     }

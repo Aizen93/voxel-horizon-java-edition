@@ -43,8 +43,8 @@ public final class BlockRenderMap {
 
         putAllFaces(Blocks.GRAVEL, "gravel");
         putAllFaces(Blocks.ICE, "ice");
-        putAllFaces(Blocks.OAK_LEAVES, "oak_leaves");
 
+        putAllFaces(Blocks.OAK_LEAVES, "oak_leaves");
         map.put(Blocks.OAK_LOG, new FaceTiles(
             "oak_log", // +X
             "oak_log", // -X
@@ -90,6 +90,28 @@ public final class BlockRenderMap {
             "dirt", // -Y (bottom)
             "dry_grass_side", // +Z
             "dry_grass_side"  // -Z
+        ));
+
+        putAllFaces(Blocks.DRY_WHEAT, "dry_wheat");
+
+        putAllFaces(Blocks.ACACIA_LEAVES, "acacia_leaves");
+        map.put(Blocks.ACACIA_LOG, new FaceTiles(
+                "acacia_log_side", // +X
+                "acacia_log_side", // -X
+                "acacia_log_top", // +Y (top)
+                "acacia_log_top", // -Y (bottom)
+                "acacia_log_side", // +Z
+                "acacia_log_side"  // -Z
+        ));
+
+        putAllFaces(Blocks.JUNGLE_LEAVES, "jungle_leaves");
+        map.put(Blocks.JUNGLE_LOG, new FaceTiles(
+                "jungle_log_side", // +X
+                "jungle_log_side", // -X
+                "jungle_log_top", // +Y (top)
+                "jungle_log_top", // -Y (bottom)
+                "jungle_log_side", // +Z
+                "jungle_log_side"  // -Z
         ));
     }
 

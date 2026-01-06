@@ -100,6 +100,7 @@ public final class EngineConfig {
     public static final short BIOME_FOREST = 3;
     public static final short BIOME_SAVANNA = 4;
     public static final short BIOME_SWAMP  = 5;
+    public static final short BIOME_JUNGLE = 6;
 
     // ===================== END BIOME TUNING =====================
 
@@ -139,14 +140,12 @@ public final class EngineConfig {
     public static final float BIOME_BLEND_SELECTOR_FREQ = 1.0f / 192.0f;
     // ===================== END BIOME BLEND GATING =====================
 
-    // ======================= SURFACE ECOTONE (border blending) =======================
-    public static final float SURFACE_ECOTONE_NOISE_FREQ = 1.0f / 96.0f;  // patch size
-    public static final float SURFACE_ECOTONE_STRENGTH = 0.85f;           // 0..1
-    public static final int   SURFACE_ECOTONE_RADIUS = 2;                // neighbor range (1 or 2)
-    // Snowline tuning (only affects snow biome edges)
-    public static final int   SNOWLINE_START_ABOVE_SEA = 10;
-    public static final int   SNOWLINE_FULL_ABOVE_SEA  = 45;
-    // ================================================================================
-
+    public static final float BIOME_JUNGLE_TEMP_MIN  = 0.72f;
+    public static final float BIOME_JUNGLE_HUMID_MIN = 0.72f;
+    public static final float BIOME_JUNGLE_BIAS = 0.05f;
+    // Jungle patch selector (coherent blobs)
+    public static final float BIOME_JUNGLE_SELECTOR_FREQ = 1.0f / 768.0f;
+    // How much of "suitable" area becomes jungle (0..1)
+    public static final float BIOME_JUNGLE_COVERAGE = 0.65f;
 
 }

@@ -1,5 +1,7 @@
 package org.aouessar.renderer.camera;
 
+import org.aouessar.renderer.ui.TeleportDialog;
+
 import static org.lwjgl.glfw.GLFW.*;
 
 public final class CameraController {
@@ -12,6 +14,8 @@ public final class CameraController {
 
     public float moveSpeed = 25f;
     public float mouseSensitivity = 0.0025f;
+
+    private boolean f9WasDown = false;
 
     public CameraController(Camera camera, long window) {
         this.camera = camera;
@@ -57,5 +61,23 @@ public final class CameraController {
 
         if (glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_PRESS) camera.position.y += spd;
         if (glfwGetKey(window, GLFW_KEY_LEFT_CONTROL) == GLFW_PRESS) camera.position.y -= spd;
+
+        boolean f9Down = glfwGetKey(window, GLFW_KEY_F9) == GLFW_PRESS;
+        if (f9Down && !f9WasDown) {
+            // Release mouse capture so you can click the Swing dialog
+            glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+            try {
+                TeleportDialog.prompt((int) camera.position.y).ifPresent(t ->
+                        camera.setPosition(t.x() + 0.5f, t.y(), t.z() + 0.5f)
+                );
+            } finally {
+                // Restore FPS mouse look
+                glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+
+                // Prevent a big camera jump on next mouse event
+                firstMouse = true;
+            }
+        }
+        f9WasDown = f9Down;
     }
 }

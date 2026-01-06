@@ -146,7 +146,9 @@ public final class BiomeDecorator implements SurfaceDecorator {
             return new Palette(top, Blocks.DIRT, 4);
         }
 
-        // Swamp / plains: default grass
+
+
+        // Swamp / plains: default grassA
         return new Palette(Blocks.GRASS, Blocks.DIRT, 4);
     }
 
@@ -175,7 +177,7 @@ public final class BiomeDecorator implements SurfaceDecorator {
     }
 
     private static short dominantDifferentNeighbor(BiomeMap map, LayerRect rect, int wx, int wz, short self, int r) {
-        int cDes = 0, cSnow = 0, cFor = 0, cSav = 0, cPla = 0, cSwp = 0;
+        int cDes = 0, cSnow = 0, cFor = 0, cSav = 0, cPla = 0, cSwp = 0, cJun = 0;
 
         for (int dz = -r; dz <= r; dz++) {
             for (int dx = -r; dx <= r; dx++) {
@@ -188,6 +190,7 @@ public final class BiomeDecorator implements SurfaceDecorator {
                 else if (b == EngineConfig.BIOME_FOREST) cFor++;
                 else if (b == EngineConfig.BIOME_SAVANNA) cSav++;
                 else if (b == EngineConfig.BIOME_SWAMP) cSwp++;
+                else if (b == EngineConfig.BIOME_JUNGLE) cJun++;
                 else cPla++; // default bucket
             }
         }
@@ -201,6 +204,7 @@ public final class BiomeDecorator implements SurfaceDecorator {
         if (cSav > bestC) { bestC = cSav; best = EngineConfig.BIOME_SAVANNA; }
         if (cSwp > bestC) { bestC = cSwp; best = EngineConfig.BIOME_SWAMP; }
         if (cPla > bestC) { bestC = cPla; best = EngineConfig.BIOME_PLAINS; }
+        if (cJun > bestC) { bestC = cJun; best = EngineConfig.BIOME_JUNGLE; }
 
         return best;
     }
