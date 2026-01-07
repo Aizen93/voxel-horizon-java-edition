@@ -112,12 +112,13 @@ public final class SimpleWorldGenerator implements WorldGenerator {
                 float oceanDepth = offshore * (EngineConfig.TERRAIN_OCEAN_BASE_DEPTH + offshore * EngineConfig.TERRAIN_OCEAN_EXTRA_DEPTH);
                 oceanDepth += offshore * (d * EngineConfig.TERRAIN_SEABED_VARIATION);
 
-                float height;
-                if (land < 0.5f) {
-                    height = sea - oceanDepth + (L * EngineConfig.TERRAIN_OCEAN_LARGE_VARIATION);
-                } else {
-                    height = sea + uplift + rolling + hills + mountains;
-                }
+                // Compute two candidate heights
+                float oceanHeight = sea - oceanDepth + (L * EngineConfig.TERRAIN_OCEAN_LARGE_VARIATION);
+                float landHeight  = sea + uplift + rolling + hills + mountains;
+
+                // NEW: continuous shoreline blend (removes the “hard switch” cliff behavior)
+                float shoreBlend = smoothstep(0.35f, 0.65f, land); // widen/narrow the coastal transition here
+                float height = org.joml.Math.lerp(oceanHeight, landHeight, shoreBlend);
 
                 int h = Math.round(height);
 

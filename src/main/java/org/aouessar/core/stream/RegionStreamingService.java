@@ -12,6 +12,7 @@ import org.aouessar.shared.EngineConfig;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicInteger;
 
 public final class RegionStreamingService implements ChunkProvider, WorldSampler, AutoCloseable {
 
@@ -120,26 +121,40 @@ public final class RegionStreamingService implements ChunkProvider, WorldSampler
     private void scheduleRegion(RegionPos rp) {
         // Deduplicate in-flight builds.
         inFlight.computeIfAbsent(rp, pos ->
-                CompletableFuture.supplyAsync(() -> buildRegion(pos), regionExecutor)
-                        .whenComplete((region, err) -> {
-                            inFlight.remove(pos);
-                            if (err == null && region != null) {
-                                ready.put(pos, region);
-                                // Optional: invalidate derived chunk cache for chunks in this region
-                                // For now, keep simple: clear all chunk cache entries for that region.
-                                invalidateChunksInRegion(pos);
-                            } else {
-                                // In production you would log this.
-                                // Keep system alive: next request will reschedule.
-                            }
-                        })
+            CompletableFuture.supplyAsync(() -> buildRegion(pos), regionExecutor)
+                .whenComplete((region, err) -> {
+                    inFlight.remove(pos);
+                    if (err == null && region != null) {
+                        ready.put(pos, region);
+                        // Optional: invalidate derived chunk cache for chunks in this region
+                        // For now, keep simple: clear all chunk cache entries for that region.
+                        invalidateChunksInRegion(pos);
+                    } else {
+                        // In production you would log this.
+                        // Keep system alive: next request will reschedule.
+                    }
+                }
+            )
         );
     }
 
     private Region buildRegion(RegionPos pos) {
-        LayerRect rect = RegionRect.rectOf(pos);
-        var layers = pipeline.generateRegionLayers(seed, rect);
-        return new Region(pos, rect, layers);
+        LayerRect baseRect = RegionRect.rectOf(pos);
+
+        int pad = EngineConfig.REGION_LAYER_PAD_BLOCKS;
+
+        LayerRect paddedRect = new LayerRect(
+                baseRect.minX - pad,
+                baseRect.minZ - pad,
+                baseRect.sizeX + pad * 2,
+                baseRect.sizeZ + pad * 2
+        );
+
+        var layers = pipeline.generateRegionLayers(seed, paddedRect);
+
+        // Keep baseRect as the "region identity rect" if you want,
+        // but layers MUST be paddedRect for seam-safe sampling/structures.
+        return new Region(pos, baseRect, layers);
     }
 
     private void invalidateChunksInRegion(RegionPos regionPos) {
@@ -175,11 +190,5 @@ public final class RegionStreamingService implements ChunkProvider, WorldSampler
             t.setDaemon(true);
             return t;
         }
-    }
-
-    //We can replace it with java.util.concurrent.atomic.AtomicInteger
-    private static final class AtomicInteger {
-        private int v;
-        int incrementAndGet() { return ++v; }
     }
 }

@@ -148,4 +148,10 @@ public final class EngineConfig {
     // How much of "suitable" area becomes jungle (0..1)
     public static final float BIOME_JUNGLE_COVERAGE = 0.65f;
 
+    // --- Region layer halo (fixes region seam structure cuts) ---
+    public static final int REGION_LAYER_PAD_CHUNKS = 1;
+    public static final int STRUCTURE_PLACEMENT_HALO_CHUNKS = 1; // 1 is enough for radius<=15; bump to 2 if you make huge canopies
+    public static final int REGION_LAYER_PAD_BLOCKS = REGION_LAYER_PAD_CHUNKS * CHUNK_SIZE;
+
+
 }

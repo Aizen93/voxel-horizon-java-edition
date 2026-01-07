@@ -158,7 +158,7 @@ public final class ChunkBuilder {
 
         // ---- 3) Structures placement (once, after terrain fill) ----
         for (StructureMap.Placement p : localPlacements) {
-            applyPlacement(chunk, cx, cz, p);
+            applyPlacement(chunk, layers, cx, cz, p);
         }
 
         return chunk;
@@ -169,99 +169,147 @@ public final class ChunkBuilder {
     // -------------------------------------------------------------------------
 
     private static List<StructureMap.Placement> filterPlacementsForChunk(StructureMap map, int cx, int cz) {
-        final int halo = 1; // one chunk around is enough for your current canopies
+        final int haloBlocks = EngineConfig.STRUCTURE_PLACEMENT_HALO_CHUNKS * EngineConfig.CHUNK_SIZE;
 
-        int minCx = cx - halo;
-        int maxCx = cx + halo;
-        int minCz = cz - halo;
-        int maxCz = cz + halo;
+        final int chunkMinX = cx * EngineConfig.CHUNK_SIZE;
+        final int chunkMinZ = cz * EngineConfig.CHUNK_SIZE;
+        final int chunkMaxX = chunkMinX + (EngineConfig.CHUNK_SIZE - 1);
+        final int chunkMaxZ = chunkMinZ + (EngineConfig.CHUNK_SIZE - 1);
+
+        final int minX = chunkMinX - haloBlocks;
+        final int minZ = chunkMinZ - haloBlocks;
+        final int maxX = chunkMaxX + haloBlocks;
+        final int maxZ = chunkMaxZ + haloBlocks;
 
         List<StructureMap.Placement> out = new ArrayList<>();
         for (StructureMap.Placement p : map.placements()) {
-            int pcx = Math.floorDiv(p.wx(), EngineConfig.CHUNK_SIZE);
-            int pcz = Math.floorDiv(p.wz(), EngineConfig.CHUNK_SIZE);
-
-            if (pcx >= minCx && pcx <= maxCx && pcz >= minCz && pcz <= maxCz) {
+            int wx = p.wx();
+            int wz = p.wz();
+            if (wx >= minX && wx <= maxX && wz >= minZ && wz <= maxZ) {
                 out.add(p);
             }
         }
         return out;
     }
 
-    private static void applyPlacement(Chunk chunk, int cx, int cz, StructureMap.Placement p) {
-        // World -> local
-        int lx = Math.floorMod(p.wx(), 16);
-        int lz = Math.floorMod(p.wz(), 16);
-        int wy = p.wy();
+    private static void applyPlacement(Chunk chunk, RegionLayers layers, int cx, int cz, StructureMap.Placement p) {
+        final int wx = p.wx();
+        final int wz = p.wz();
+        final int wy = p.wy();
 
         if (wy < EngineConfig.MIN_Y || wy > EngineConfig.MAX_Y) return;
 
-        short marker = p.structureId();
+        final short marker = p.structureId();
 
-        // Must have air at placement point
-        if (chunk.getBlock(lx, wy, lz) != Blocks.AIR) return;
+        // Don’t spawn structures in carved river columns (prevents weird floating / river cuts)
+        if (layers.carveMask().isCarvedColumn(wx, wz)) return;
 
-        // Ground check (common)
-        short ground = (wy - 1 >= EngineConfig.MIN_Y) ? chunk.getBlock(lx, wy - 1, lz) : Blocks.AIR;
+        // Determine ground top at (wx,wz) using the same overrides as terrain fill
+        final int surfaceY = layers.heightmap().heightAt(wx, wz);
+        final short biome = layers.biomeMap().biomeIdAtUnchecked(wx, wz);
+        final short groundTop = resolveTopForStructures(layers, wx, wz, surfaceY, biome);
 
-        // --- Multi-block “structure markers” ---
+        // Base must be just above the column surface (StructureBuilder uses surfaceY+1)
+        // Keep it lenient: allow if it’s above surface by 1..2 (small safety for future tweaks)
+        if (wy <= surfaceY) return;
+        if (wy > surfaceY + 2) return;
+
+        // ----- Trees -----
         if (marker == Blocks.STRUCT_OAK_TREE) {
-            // Allow trees on any soil-like block
-            if (!isSoil(ground)) return;
-
-            int h = 4 + (hash8(p.wx(), p.wz()) % 3); // 4..6
-            placeOakTreePart(chunk, cx, cz, p.wx(), wy, p.wz(), h);
-            return;
-        }
-
-        // --- Single-block placements (vegetation) ---
-        if (marker == Blocks.TALL_GRASS || marker == Blocks.DRY_WHEAT ||
-                marker == Blocks.FLOWER_RED || marker == Blocks.FLOWER_YELLOW || marker == Blocks.BUSH) {
-            // Plants should grow on grass-like tops (not podzol, not dirt)
-            if (!isGrassLike(ground)) return;
-
-            chunk.setBlock(lx, wy, lz, marker);
-            return;
-        }
-
-        // --- Cactus (2-4 tall) ---
-        if (marker == Blocks.CACTUS) {
-            // Desert sand should allow cactus too
-            if (!isSandLike(ground)) return;
-
-            int height = 2 + (hash8(p.wx(), p.wz()) % 3); // 2..4
-            for (int dy = 0; dy < height; dy++) {
-                int y = wy + dy;
-                if (y > EngineConfig.MAX_Y) break;
-                if (chunk.getBlock(lx, y, lz) != Blocks.AIR) break;
-                chunk.setBlock(lx, y, lz, Blocks.CACTUS);
-            }
+            if (!isSoil(groundTop)) return;
+            int h = 4 + (hash8(wx, wz) % 3);
+            placeOakTreePart(chunk, cx, cz, wx, wy, wz, h);
             return;
         }
 
         if (marker == Blocks.STRUCT_ACACIA_TREE) {
-            if (!isSoil(ground)) return;
-            int h = 4 + (hash8(p.wx(), p.wz()) % 3); // 4..6
-            placeAcaciaTreePart(chunk, cx, cz, p.wx(), wy, p.wz(), h);
+            if (!isSoil(groundTop)) return;
+            int h = 4 + (hash8(wx, wz) % 3);
+            placeAcaciaTreePart(chunk, cx, cz, wx, wy, wz, h);
             return;
         }
 
         if (marker == Blocks.STRUCT_JUNGLE_TREE) {
-            if (!isSoil(ground)) return;
-            int h = 7 + (hash8(p.wx(), p.wz()) % 6); // 7..12
-            placeJungleTreePart(chunk, cx, cz, p.wx(), wy, p.wz(), h);
+            if (!isSoil(groundTop)) return;
+            int h = 7 + (hash8(wx, wz) % 6);
+            placeJungleTreePart(chunk, cx, cz, wx, wy, wz, h);
             return;
         }
 
         if (marker == Blocks.STRUCT_MEGA_JUNGLE) {
-            if (!isSoil(ground)) return;
-            int h = 15 + (hash8(p.wx(), p.wz()) % 9); // 18..27
-            placeSpruceTree(chunk, cx, cz, p.wx(), wy, p.wz(), h);
+            if (!isSoil(groundTop)) return;
+            int h = 15 + (hash8(wx, wz) % 9);
+            placeSpruceTree(chunk, cx, cz, wx, wy, wz, h);
             return;
         }
 
-        // Fallback: treat structureId as a direct block id
-        chunk.setBlock(lx, wy, lz, marker);
+        // ----- Plants (single-block) -----
+        if (marker == Blocks.TALL_GRASS || marker == Blocks.DRY_WHEAT ||
+                marker == Blocks.FLOWER_RED || marker == Blocks.FLOWER_YELLOW || marker == Blocks.BUSH) {
+
+            if (!isGrassLike(groundTop)) return;
+
+            // Place ONLY if that world position is inside THIS chunk
+            setIfInThisChunkIfReplaceable(chunk, cx, cz, wx, wy, wz, marker);
+            return;
+        }
+
+        // ----- Cactus (multi-block) -----
+        if (marker == Blocks.CACTUS) {
+            if (!isSandLike(groundTop)) return;
+
+            int height = 2 + (hash8(wx, wz) % 3);
+            for (int dy = 0; dy < height; dy++) {
+                int y = wy + dy;
+                if (y > EngineConfig.MAX_Y) break;
+                setIfInThisChunkIfReplaceable(chunk, cx, cz, wx, y, wz, Blocks.CACTUS);
+            }
+            return;
+        }
+
+        // Fallback: treat as direct block id at (wx,wy,wz), but only if it belongs to this chunk
+        setIfInThisChunkIfReplaceable(chunk, cx, cz, wx, wy, wz, marker);
+    }
+
+    private static short resolveTopForStructures(RegionLayers layers, int wx, int wz, int surfaceY, short biome) {
+        final int sea = EngineConfig.SEA_LEVEL;
+
+        short top = layers.surfaceRules().topBlockAt(wx, wz);
+
+        // Same overrides as terrain fill
+        boolean isBeach = Math.abs(surfaceY - sea) <= EngineConfig.BEACH_BAND;
+        if (isBeach && surfaceY >= sea - 2 && surfaceY <= sea + 6) {
+            return Blocks.SAND;
+        }
+
+        boolean isDesert = (biome == EngineConfig.BIOME_DESERT);
+        if (isDesert && !isBeach) {
+            return Blocks.DESERT_SAND;
+        }
+
+        boolean underwater = surfaceY < sea;
+        if (underwater) {
+            int h = hash8(wx, wz);
+            if (h < EngineConfig.OCEAN_CLAY_CHANCE_PER_256) return Blocks.CLAY;
+            if (h < EngineConfig.OCEAN_CLAY_CHANCE_PER_256 + EngineConfig.OCEAN_GRAVEL_CHANCE_PER_256) return Blocks.GRAVEL;
+            return Blocks.SAND;
+        }
+
+        return top;
+    }
+
+    private static void setIfInThisChunkIfReplaceable(Chunk chunk, int cx, int cz, int wx, int wy, int wz, short id) {
+        if (wy < EngineConfig.MIN_Y || wy > EngineConfig.MAX_Y) return;
+        if (!isInChunk(wx, wz, cx, cz)) return;
+
+        int lx = Math.floorMod(wx, EngineConfig.CHUNK_SIZE);
+        int lz = Math.floorMod(wz, EngineConfig.CHUNK_SIZE);
+
+        short cur = chunk.getBlock(lx, wy, lz);
+        // Keep it simple: only place into air (prevents weird overwrites across overlapping placements)
+        if (cur == Blocks.AIR) {
+            chunk.setBlock(lx, wy, lz, id);
+        }
     }
 
     /**
@@ -297,8 +345,8 @@ public final class ChunkBuilder {
         if (wy < EngineConfig.MIN_Y || wy > EngineConfig.MAX_Y) return;
         if (!isInChunk(wx, wz, cx, cz)) return;
 
-        int lx = Math.floorMod(wx, 16);
-        int lz = Math.floorMod(wz, 16);
+        int lx = Math.floorMod(wx, EngineConfig.CHUNK_SIZE);
+        int lz = Math.floorMod(wz, EngineConfig.CHUNK_SIZE);
 
         if (chunk.getBlock(lx, wy, lz) == Blocks.AIR) {
             chunk.setBlock(lx, wy, lz, leavesId);
@@ -310,14 +358,14 @@ public final class ChunkBuilder {
         if (wy < EngineConfig.MIN_Y || wy > EngineConfig.MAX_Y) return;
         if (!isInChunk(wx, wz, cx, cz)) return;
 
-        int lx = Math.floorMod(wx, 16);
-        int lz = Math.floorMod(wz, 16);
+        int lx = Math.floorMod(wx, EngineConfig.CHUNK_SIZE);
+        int lz = Math.floorMod(wz, EngineConfig.CHUNK_SIZE);
 
         chunk.setBlock(lx, wy, lz, id);
     }
 
     private static boolean isInChunk(int wx, int wz, int cx, int cz) {
-        return Math.floorDiv(wx, 16) == cx && Math.floorDiv(wz, 16) == cz;
+        return Math.floorDiv(wx, EngineConfig.CHUNK_SIZE) == cx && Math.floorDiv(wz, EngineConfig.CHUNK_SIZE) == cz;
     }
 
     // Small deterministic hash -> [0..255]
