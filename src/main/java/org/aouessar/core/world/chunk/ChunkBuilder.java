@@ -1,5 +1,6 @@
 package org.aouessar.core.world.chunk;
 
+import org.aouessar.core.gen.impl.GlobalTerrainUtils;
 import org.aouessar.core.world.Blocks;
 import org.aouessar.core.world.Region;
 import org.aouessar.core.world.WorldGrid;
@@ -62,7 +63,7 @@ public final class ChunkBuilder {
                 // Underwater seabed: sand/gravel/clay mix
                 boolean underwater = surfaceY < sea;
                 if (underwater) {
-                    int h = hash8(wx, wz);
+                    int h = GlobalTerrainUtils.hash8(wx, wz);
                     if (h < EngineConfig.OCEAN_CLAY_CHANCE_PER_256) {
                         top = Blocks.CLAY;
                         filler = Blocks.CLAY;
@@ -168,7 +169,7 @@ public final class ChunkBuilder {
     // Placements
     // -------------------------------------------------------------------------
 
-    private static List<StructureMap.Placement> filterPlacementsForChunk(StructureMap map, int cx, int cz) {
+    private List<StructureMap.Placement> filterPlacementsForChunk(StructureMap map, int cx, int cz) {
         final int haloBlocks = EngineConfig.STRUCTURE_PLACEMENT_HALO_CHUNKS * EngineConfig.CHUNK_SIZE;
 
         final int chunkMinX = cx * EngineConfig.CHUNK_SIZE;
@@ -192,7 +193,7 @@ public final class ChunkBuilder {
         return out;
     }
 
-    private static void applyPlacement(Chunk chunk, RegionLayers layers, int cx, int cz, StructureMap.Placement p) {
+    private void applyPlacement(Chunk chunk, RegionLayers layers, int cx, int cz, StructureMap.Placement p) {
         final int wx = p.wx();
         final int wz = p.wz();
         final int wy = p.wy();
@@ -217,28 +218,28 @@ public final class ChunkBuilder {
         // ----- Trees -----
         if (marker == Blocks.STRUCT_OAK_TREE) {
             if (!isSoil(groundTop)) return;
-            int h = 4 + (hash8(wx, wz) % 3);
+            int h = 4 + (GlobalTerrainUtils.hash8(wx, wz) % 3);
             placeOakTreePart(chunk, cx, cz, wx, wy, wz, h);
             return;
         }
 
         if (marker == Blocks.STRUCT_ACACIA_TREE) {
             if (!isSoil(groundTop)) return;
-            int h = 4 + (hash8(wx, wz) % 3);
+            int h = 4 + (GlobalTerrainUtils.hash8(wx, wz) % 3);
             placeAcaciaTreePart(chunk, cx, cz, wx, wy, wz, h);
             return;
         }
 
         if (marker == Blocks.STRUCT_JUNGLE_TREE) {
             if (!isSoil(groundTop)) return;
-            int h = 7 + (hash8(wx, wz) % 6);
+            int h = 7 + (GlobalTerrainUtils.hash8(wx, wz) % 6);
             placeJungleTreePart(chunk, cx, cz, wx, wy, wz, h);
             return;
         }
 
         if (marker == Blocks.STRUCT_MEGA_JUNGLE) {
             if (!isSoil(groundTop)) return;
-            int h = 15 + (hash8(wx, wz) % 9);
+            int h = 15 + (GlobalTerrainUtils.hash8(wx, wz) % 9);
             placeSpruceTree(chunk, cx, cz, wx, wy, wz, h);
             return;
         }
@@ -258,7 +259,7 @@ public final class ChunkBuilder {
         if (marker == Blocks.CACTUS) {
             if (!isSandLike(groundTop)) return;
 
-            int height = 2 + (hash8(wx, wz) % 3);
+            int height = 2 + (GlobalTerrainUtils.hash8(wx, wz) % 3);
             for (int dy = 0; dy < height; dy++) {
                 int y = wy + dy;
                 if (y > EngineConfig.MAX_Y) break;
@@ -271,7 +272,7 @@ public final class ChunkBuilder {
         setIfInThisChunkIfReplaceable(chunk, cx, cz, wx, wy, wz, marker);
     }
 
-    private static short resolveTopForStructures(RegionLayers layers, int wx, int wz, int surfaceY, short biome) {
+    private short resolveTopForStructures(RegionLayers layers, int wx, int wz, int surfaceY, short biome) {
         final int sea = EngineConfig.SEA_LEVEL;
 
         short top = layers.surfaceRules().topBlockAt(wx, wz);
@@ -289,7 +290,7 @@ public final class ChunkBuilder {
 
         boolean underwater = surfaceY < sea;
         if (underwater) {
-            int h = hash8(wx, wz);
+            int h = GlobalTerrainUtils.hash8(wx, wz);
             if (h < EngineConfig.OCEAN_CLAY_CHANCE_PER_256) return Blocks.CLAY;
             if (h < EngineConfig.OCEAN_CLAY_CHANCE_PER_256 + EngineConfig.OCEAN_GRAVEL_CHANCE_PER_256) return Blocks.GRAVEL;
             return Blocks.SAND;
@@ -298,7 +299,7 @@ public final class ChunkBuilder {
         return top;
     }
 
-    private static void setIfInThisChunkIfReplaceable(Chunk chunk, int cx, int cz, int wx, int wy, int wz, short id) {
+    private void setIfInThisChunkIfReplaceable(Chunk chunk, int cx, int cz, int wx, int wy, int wz, short id) {
         if (wy < EngineConfig.MIN_Y || wy > EngineConfig.MAX_Y) return;
         if (!isInChunk(wx, wz, cx, cz)) return;
 
@@ -312,11 +313,56 @@ public final class ChunkBuilder {
         }
     }
 
+    private void setLeavesIfAir(Chunk chunk, int cx, int cz, int wx, int wy, int wz, short leavesId) {
+        if (wy < EngineConfig.MIN_Y || wy > EngineConfig.MAX_Y) return;
+        if (!isInChunk(wx, wz, cx, cz)) return;
+
+        int lx = Math.floorMod(wx, EngineConfig.CHUNK_SIZE);
+        int lz = Math.floorMod(wz, EngineConfig.CHUNK_SIZE);
+
+        if (chunk.getBlock(lx, wy, lz) == Blocks.AIR) {
+            chunk.setBlock(lx, wy, lz, leavesId);
+        }
+    }
+
+    private void setIfInThisChunk(Chunk chunk, int cx, int cz, int wx, int wy, int wz, short id) {
+        if (wy < EngineConfig.MIN_Y || wy > EngineConfig.MAX_Y) return;
+        if (!isInChunk(wx, wz, cx, cz)) return;
+
+        int lx = Math.floorMod(wx, EngineConfig.CHUNK_SIZE);
+        int lz = Math.floorMod(wz, EngineConfig.CHUNK_SIZE);
+
+        chunk.setBlock(lx, wy, lz, id);
+    }
+
+    private boolean isInChunk(int wx, int wz, int cx, int cz) {
+        return Math.floorDiv(wx, EngineConfig.CHUNK_SIZE) == cx && Math.floorDiv(wz, EngineConfig.CHUNK_SIZE) == cz;
+    }
+
+    private boolean isSoil(short id) {
+        return id == Blocks.DIRT ||
+                id == Blocks.GRASS ||
+                id == Blocks.DRY_GRASS ||
+                id == Blocks.SNOW_GRASS ||
+                id == Blocks.PODZOl_DIRT;
+    }
+
+    private boolean isGrassLike(short id) {
+        return id == Blocks.GRASS ||
+                id == Blocks.DRY_GRASS ||
+                id == Blocks.SNOW_GRASS;
+    }
+
+    private boolean isSandLike(short id) {
+        return id == Blocks.SAND ||
+                id == Blocks.DESERT_SAND;
+    }
+
     /**
      * Places only the part of the oak tree that belongs to THIS chunk.
      * This allows trees near borders to be placed consistently when neighbor chunks build.
      */
-    private static void placeOakTreePart(Chunk chunk, int cx, int cz, int wxBase, int wyBase, int wzBase, int trunkH) {
+    private void placeOakTreePart(Chunk chunk, int cx, int cz, int wxBase, int wyBase, int wzBase, int trunkH) {
         // Trunk
         for (int dy = 0; dy < trunkH; dy++) {
             setIfInThisChunk(chunk, cx, cz, wxBase, wyBase + dy, wzBase, Blocks.OAK_LOG);
@@ -341,63 +387,8 @@ public final class ChunkBuilder {
         }
     }
 
-    private static void setLeavesIfAir(Chunk chunk, int cx, int cz, int wx, int wy, int wz, short leavesId) {
-        if (wy < EngineConfig.MIN_Y || wy > EngineConfig.MAX_Y) return;
-        if (!isInChunk(wx, wz, cx, cz)) return;
-
-        int lx = Math.floorMod(wx, EngineConfig.CHUNK_SIZE);
-        int lz = Math.floorMod(wz, EngineConfig.CHUNK_SIZE);
-
-        if (chunk.getBlock(lx, wy, lz) == Blocks.AIR) {
-            chunk.setBlock(lx, wy, lz, leavesId);
-        }
-    }
-
-
-    private static void setIfInThisChunk(Chunk chunk, int cx, int cz, int wx, int wy, int wz, short id) {
-        if (wy < EngineConfig.MIN_Y || wy > EngineConfig.MAX_Y) return;
-        if (!isInChunk(wx, wz, cx, cz)) return;
-
-        int lx = Math.floorMod(wx, EngineConfig.CHUNK_SIZE);
-        int lz = Math.floorMod(wz, EngineConfig.CHUNK_SIZE);
-
-        chunk.setBlock(lx, wy, lz, id);
-    }
-
-    private static boolean isInChunk(int wx, int wz, int cx, int cz) {
-        return Math.floorDiv(wx, EngineConfig.CHUNK_SIZE) == cx && Math.floorDiv(wz, EngineConfig.CHUNK_SIZE) == cz;
-    }
-
-    // Small deterministic hash -> [0..255]
-    private static int hash8(int x, int z) {
-        int h = x * 0x1f1f1f1f ^ z * 0x7f4a7c15;
-        h ^= (h >>> 16);
-        h *= 0x85ebca6b;
-        h ^= (h >>> 13);
-        return h & 0xFF;
-    }
-
-    private static boolean isSoil(short id) {
-        return id == Blocks.DIRT ||
-                id == Blocks.GRASS ||
-                id == Blocks.DRY_GRASS ||
-                id == Blocks.SNOW_GRASS ||
-                id == Blocks.PODZOl_DIRT;
-    }
-
-    private static boolean isGrassLike(short id) {
-        return id == Blocks.GRASS ||
-                id == Blocks.DRY_GRASS ||
-                id == Blocks.SNOW_GRASS;
-    }
-
-    private static boolean isSandLike(short id) {
-        return id == Blocks.SAND ||
-                id == Blocks.DESERT_SAND;
-    }
-
-    private static void placeAcaciaTreePart(Chunk chunk, int cx, int cz, int wxBase, int wyBase, int wzBase, int trunkH) {
-        int dir = hash8(wxBase, wzBase) & 3; // 0..3
+    private void placeAcaciaTreePart(Chunk chunk, int cx, int cz, int wxBase, int wyBase, int wzBase, int trunkH) {
+        int dir = GlobalTerrainUtils.hash8(wxBase, wzBase) & 3; // 0..3
         int bendStart = trunkH - 2;
 
         // trunk straight then slight bend
@@ -428,7 +419,7 @@ public final class ChunkBuilder {
         }
     }
 
-    private static void placeJungleTreePart(Chunk chunk, int cx, int cz, int wxBase, int wyBase, int wzBase, int trunkH) {
+    private void placeJungleTreePart(Chunk chunk, int cx, int cz, int wxBase, int wyBase, int wzBase, int trunkH) {
         // tall straight trunk
         for (int dy = 0; dy < trunkH; dy++) {
             setIfInThisChunk(chunk, cx, cz, wxBase, wyBase + dy, wzBase, Blocks.JUNGLE_LOG);
@@ -447,7 +438,7 @@ public final class ChunkBuilder {
         }
     }
 
-    private static void placeMegaJunglePartNormal(Chunk chunk, int cx, int cz, int wxBase, int wyBase, int wzBase, int trunkH) {
+    private void placeMegaJunglePartNormal(Chunk chunk, int cx, int cz, int wxBase, int wyBase, int wzBase, int trunkH) {
         // 2x2 trunk (anchor at wxBase,wzBase)
         for (int dy = 0; dy < trunkH; dy++) {
             setIfInThisChunk(chunk, cx, cz, wxBase,     wyBase + dy, wzBase,     Blocks.JUNGLE_LOG);
@@ -469,7 +460,7 @@ public final class ChunkBuilder {
         }
     }
 
-    private static void placeSpruceTree(
+    private void placeSpruceTree(
             Chunk chunk,
             int cx, int cz,
             int wxBase, int wyBase, int wzBase,
@@ -513,7 +504,7 @@ public final class ChunkBuilder {
      * Perfectly mirrored layer using symmetric masks, max radius = 3.
      * This prevents "one side thicker than the other".
      */
-    private static void placeSpruceLayerSymmetric(
+    private void placeSpruceLayerSymmetric(
             Chunk chunk,
             int cx, int cz,
             int wxC, int wy, int wzC,
@@ -524,19 +515,19 @@ public final class ChunkBuilder {
         // radius 1 => plus + center (no diagonals) => thin look
         // radius 2 => diamond-ish ring (still trimmed corners)
         // radius 3 => fuller but still capped and symmetric
-        final int[][] OFFSETS;
+        final int[][] offsets;
         switch (radius) {
-            case 1 -> OFFSETS = new int[][]{
+            case 1 -> offsets = new int[][]{
                     {0,0},
                     {1,0},{-1,0},{0,1},{0,-1}
             };
-            case 2 -> OFFSETS = new int[][]{
+            case 2 -> offsets = new int[][]{
                     {0,0},
                     {1,0},{-1,0},{0,1},{0,-1},
                     {2,0},{-2,0},{0,2},{0,-2},
                     {1,1},{1,-1},{-1,1},{-1,-1}
             };
-            default -> OFFSETS = new int[][]{
+            default -> offsets = new int[][]{
                     {0,0},
                     {1,0},{-1,0},{0,1},{0,-1},
                     {2,0},{-2,0},{0,2},{0,-2},
@@ -547,12 +538,10 @@ public final class ChunkBuilder {
             };
         }
 
-        for (int[] o : OFFSETS) {
+        for (int[] o : offsets) {
             int dx = o[0];
             int dz = o[1];
             setLeavesIfAir(chunk, cx, cz, wxC + dx, wy, wzC + dz, leavesId);
         }
     }
-
-
 }

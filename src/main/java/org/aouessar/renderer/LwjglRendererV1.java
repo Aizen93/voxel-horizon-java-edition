@@ -1,6 +1,7 @@
 package org.aouessar.renderer;
 
 import org.aouessar.core.api.ChunkProvider;
+import org.aouessar.core.api.WorldAccess;
 import org.aouessar.renderer.atlas.Atlas;
 import org.aouessar.renderer.atlas.AtlasLoader;
 import org.aouessar.renderer.camera.Camera;
@@ -29,8 +30,8 @@ public final class LwjglRendererV1 {
     private final FogCycle fogCycle = new FogCycle();
     private final LongKeyList visibleKeys = new LongKeyList(8192);
 
-    public LwjglRendererV1(ChunkProvider chunkProvider, int radius) {
-        this.chunkProvider = chunkProvider;
+    public LwjglRendererV1(WorldAccess world, int radius) {
+        this.chunkProvider = world.chunkProvider();
         this.radius = radius;
         this.evictRadius = radius + 2;
     }

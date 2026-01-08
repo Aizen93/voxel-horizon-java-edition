@@ -1,6 +1,6 @@
 package org.aouessar.app;
 
-import org.aouessar.core.api.ChunkProvider;
+import org.aouessar.core.api.WorldAccess;
 import org.aouessar.core.gen.RegionPipeline;
 import org.aouessar.core.gen.impl.BiomeDecorator;
 import org.aouessar.core.gen.impl.DefaultBiomeGenerator;
@@ -18,17 +18,18 @@ public final class Main {
 
         // Core pipeline (deterministic, region-based)
         RegionPipeline pipeline = new DefaultRegionPipeline(
-                new SimpleWorldGenerator(),
-                new DefaultBiomeGenerator(),
-                new DefaultWorldCarver(),
-                new BiomeDecorator(),
-                new DefaultStructureBuilder()
+            new SimpleWorldGenerator(),
+            new DefaultBiomeGenerator(),
+            new DefaultWorldCarver(),
+            new BiomeDecorator(),
+            new DefaultStructureBuilder()
         );
 
-        // Core streaming service (ChunkProvider)
-        ChunkProvider chunkProvider = new RegionStreamingService(seed, pipeline);
+        RegionStreamingService world = new RegionStreamingService(seed, pipeline);
+
+        WorldAccess access = new WorldAccess(world, world);
 
         // Renderer v1 (near-field)
-        new LwjglRendererV1(chunkProvider, 42).run();
+        new LwjglRendererV1(access, 42).run();
     }
 }

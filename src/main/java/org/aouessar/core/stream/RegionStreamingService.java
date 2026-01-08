@@ -12,25 +12,21 @@ import org.aouessar.shared.EngineConfig;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.*;
-import java.util.concurrent.atomic.AtomicInteger;
 
 public final class RegionStreamingService implements ChunkProvider, WorldSampler, AutoCloseable {
 
     private final long seed;
     private final RegionPipeline pipeline;
-
     private final ExecutorService regionExecutor;
+    private final ChunkBuilder chunkBuilder;
 
     // Ready regions (cache). Production-grade: you can later swap to Caffeine.
     private final ConcurrentHashMap<RegionPos, Region> ready = new ConcurrentHashMap<>();
-
     // In-flight region builds (dedup).
     private final ConcurrentHashMap<RegionPos, CompletableFuture<Region>> inFlight = new ConcurrentHashMap<>();
-
     // Optional small chunk cache (derived). Keep bounded later.
     private final ConcurrentHashMap<ChunkPos, Chunk> chunkCache = new ConcurrentHashMap<>();
 
-    private final ChunkBuilder chunkBuilder = new ChunkBuilder();
 
     public RegionStreamingService(long seed, RegionPipeline pipeline) {
         this(seed, pipeline, Executors.newFixedThreadPool(EngineConfig.CPU_WORKERS, new NamedThreadFactory("region-gen")));
@@ -40,6 +36,7 @@ public final class RegionStreamingService implements ChunkProvider, WorldSampler
         this.seed = seed;
         this.pipeline = Objects.requireNonNull(pipeline);
         this.regionExecutor = Objects.requireNonNull(regionExecutor);
+        this.chunkBuilder = new ChunkBuilder();
     }
 
     // -----------------------
@@ -92,7 +89,7 @@ public final class RegionStreamingService implements ChunkProvider, WorldSampler
         Region region = ready.get(rp);
         if (region == null) {
             scheduleRegion(rp);
-            return Chunk.emptyAir(cx, cz); // deterministic placeholder
+            return Chunk.emptyChunk(cx, cz); // deterministic placeholder
         }
 
         // Build deterministically from region layers (no async here; async is for region generation)
@@ -172,23 +169,5 @@ public final class RegionStreamingService implements ChunkProvider, WorldSampler
     @Override
     public void close() {
         regionExecutor.shutdownNow();
-    }
-
-    // -----------------------
-    // Thread factory (nice names)
-    // -----------------------
-    private static final class NamedThreadFactory implements ThreadFactory {
-        private final String base;
-        private final ThreadFactory delegate = Executors.defaultThreadFactory();
-        private final AtomicInteger idx = new AtomicInteger();
-
-        private NamedThreadFactory(String base) { this.base = base; }
-
-        @Override public Thread newThread(Runnable r) {
-            Thread t = delegate.newThread(r);
-            t.setName(base + "-" + idx.incrementAndGet());
-            t.setDaemon(true);
-            return t;
-        }
     }
 }

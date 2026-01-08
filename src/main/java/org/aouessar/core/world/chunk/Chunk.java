@@ -4,6 +4,7 @@ import org.aouessar.core.math.Height;
 import org.aouessar.shared.EngineConfig;
 
 public final class Chunk {
+
     private final int cx;
     private final int cz;
     private final short[] blocks; // [x,z,y] flattened
@@ -16,8 +17,13 @@ public final class Chunk {
         this.blocks = blocks;
     }
 
-    public int cx() { return cx; }
-    public int cz() { return cz; }
+    public int cx() {
+        return cx;
+    }
+
+    public int cz() {
+        return cz;
+    }
 
     public short getBlock(int localX, int worldY, int localZ) {
         int ly = Height.toLocalY(worldY);
@@ -35,15 +41,17 @@ public final class Chunk {
         blocks[index(localX, ly, localZ)] = id;
     }
 
-    public short[] raw() { return blocks; }
+    public short[] raw() {
+        return blocks;
+    }
 
-    public static Chunk emptyAir(int cx, int cz) {
+    public static Chunk emptyChunk(int cx, int cz) {
         short[] b = new short[EngineConfig.CHUNK_SIZE * EngineConfig.CHUNK_SIZE * EngineConfig.WORLD_HEIGHT];
         // default 0 = AIR
         return new Chunk(cx, cz, b);
     }
 
-    private static int index(int x, int ly, int z) {
+    private int index(int x, int ly, int z) {
         // Layout: ((z * CHUNK_SIZE) + x) * WORLD_HEIGHT + ly
         return ((z * EngineConfig.CHUNK_SIZE) + x) * EngineConfig.WORLD_HEIGHT + ly;
     }

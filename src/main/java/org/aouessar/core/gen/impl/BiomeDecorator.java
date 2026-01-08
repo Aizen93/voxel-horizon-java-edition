@@ -39,7 +39,7 @@ public final class BiomeDecorator implements SurfaceDecorator {
                 // Your existing border nudge (keeps biome borders less jagged)
                 short majority = majorityBiome4(biomeMap, rect, wx, wz, b);
                 if (majority != b) {
-                    float r = hash01(905282311L, wx, wz);
+                    float r = GlobalTerrainUtils.hash01(905282311L, wx, wz);
                     b = (r < 0.70f) ? b : majority;
                 }
 
@@ -75,7 +75,7 @@ public final class BiomeDecorator implements SurfaceDecorator {
 
                     // how "border-ish" is this column: count how many neighbors differ
                     int diff = countDifferentNeighbors(biomeMap, rect, wx, wz, b, 2);
-                    float edge = clamp01(diff / 12.0f); // r=2 => normalize
+                    float edge = GlobalTerrainUtils.clamp01(diff / 12.0f); // r=2 => normalize
 
                     float n01 = (eco.GetNoise(wx, wz) + 1f) * 0.5f; // 0..1
 
@@ -83,16 +83,16 @@ public final class BiomeDecorator implements SurfaceDecorator {
                     float selfBias = dominanceBias(b);
 
                     // Edge pushes toward mixing; deeper inside keeps self palette
-                    float threshold = clamp01(selfBias + (edge - 0.5f) * 0.85f);
+                    float threshold = GlobalTerrainUtils.clamp01(selfBias + (edge - 0.5f) * 0.85f);
 
                     // Special-case snow transitions so snow feels altitude-driven and patchy
                     // (prevents "hard white paint")
                     if (b == EngineConfig.BIOME_SNOW || otherBiome == EngineConfig.BIOME_SNOW) {
                         float snowFactor = snowlineFactor(h); // 0..1
                         // If current biome is snow but altitude is low -> reduce snow dominance
-                        if (b == EngineConfig.BIOME_SNOW) threshold = clamp01(threshold * snowFactor);
+                        if (b == EngineConfig.BIOME_SNOW) threshold = GlobalTerrainUtils.clamp01(threshold * snowFactor);
                         // If neighbor is snow and altitude supports it -> allow some intrusion
-                        if (otherBiome == EngineConfig.BIOME_SNOW) threshold = clamp01(threshold + snowFactor * 0.15f);
+                        if (otherBiome == EngineConfig.BIOME_SNOW) threshold = GlobalTerrainUtils.clamp01(threshold + snowFactor * 0.15f);
                     }
 
                     boolean keepSelf = (n01 < threshold);
@@ -113,13 +113,9 @@ public final class BiomeDecorator implements SurfaceDecorator {
         return new SurfaceRules(rect, top, filler, depth);
     }
 
-// ---------------- helpers (inside BiomeDecorator) ----------------
+    // ---------------- helpers ----------------
 
-    private static final class Palette {
-        final short top, filler;
-        final int depth;
-        Palette(short top, short filler, int depth) { this.top = top; this.filler = filler; this.depth = depth; }
-    }
+    private record Palette(short top, short filler, int depth) {}
 
     private static Palette paletteFor(short biome, int heightY) {
         // Desert: red sand + red sandstone foundation
@@ -146,8 +142,6 @@ public final class BiomeDecorator implements SurfaceDecorator {
             return new Palette(top, Blocks.DIRT, 4);
         }
 
-
-
         // Swamp / plains: default grassA
         return new Palette(Blocks.GRASS, Blocks.DIRT, 4);
     }
@@ -170,14 +164,14 @@ public final class BiomeDecorator implements SurfaceDecorator {
         return t * t * (3f - 2f * t);
     }
 
-    private static float clamp01(float v) {
-        if (v < 0f) return 0f;
-        if (v > 1f) return 1f;
-        return v;
-    }
-
-    private static short dominantDifferentNeighbor(BiomeMap map, LayerRect rect, int wx, int wz, short self, int r) {
-        int cDes = 0, cSnow = 0, cFor = 0, cSav = 0, cPla = 0, cSwp = 0, cJun = 0;
+    private short dominantDifferentNeighbor(BiomeMap map, LayerRect rect, int wx, int wz, short self, int r) {
+        int cDes = 0;
+        int cSnow = 0;
+        int cFor = 0;
+        int cSav = 0;
+        int cPla = 0;
+        int cSwp = 0;
+        int cJun = 0;
 
         for (int dz = -r; dz <= r; dz++) {
             for (int dx = -r; dx <= r; dx++) {
@@ -185,13 +179,15 @@ public final class BiomeDecorator implements SurfaceDecorator {
                 short b = sample(map, rect, wx + dx, wz + dz, self);
                 if (b == self) continue;
 
-                if (b == EngineConfig.BIOME_DESERT) cDes++;
-                else if (b == EngineConfig.BIOME_SNOW) cSnow++;
-                else if (b == EngineConfig.BIOME_FOREST) cFor++;
-                else if (b == EngineConfig.BIOME_SAVANNA) cSav++;
-                else if (b == EngineConfig.BIOME_SWAMP) cSwp++;
-                else if (b == EngineConfig.BIOME_JUNGLE) cJun++;
-                else cPla++; // default bucket
+                switch (b) {
+                    case EngineConfig.BIOME_DESERT -> cDes++;
+                    case EngineConfig.BIOME_SNOW -> cSnow++;
+                    case EngineConfig.BIOME_FOREST -> cFor++;
+                    case EngineConfig.BIOME_SAVANNA -> cSav++;
+                    case EngineConfig.BIOME_SWAMP -> cSwp++;
+                    case EngineConfig.BIOME_JUNGLE -> cJun++;
+                    default -> cPla++; // default bucket
+                }
             }
         }
 
@@ -204,12 +200,12 @@ public final class BiomeDecorator implements SurfaceDecorator {
         if (cSav > bestC) { bestC = cSav; best = EngineConfig.BIOME_SAVANNA; }
         if (cSwp > bestC) { bestC = cSwp; best = EngineConfig.BIOME_SWAMP; }
         if (cPla > bestC) { bestC = cPla; best = EngineConfig.BIOME_PLAINS; }
-        if (cJun > bestC) { bestC = cJun; best = EngineConfig.BIOME_JUNGLE; }
+        if (cJun > bestC) { best = EngineConfig.BIOME_JUNGLE; }
 
         return best;
     }
 
-    private static int countDifferentNeighbors(BiomeMap map, LayerRect rect, int wx, int wz, short self, int r) {
+    private int countDifferentNeighbors(BiomeMap map, LayerRect rect, int wx, int wz, short self, int r) {
         int diff = 0;
         for (int dz = -r; dz <= r; dz++) {
             for (int dx = -r; dx <= r; dx++) {
@@ -221,7 +217,7 @@ public final class BiomeDecorator implements SurfaceDecorator {
         return diff;
     }
 
-    private static short sample(BiomeMap map, LayerRect rect, int x, int z, short fallback) {
+    private short sample(BiomeMap map, LayerRect rect, int x, int z, short fallback) {
         if (x < rect.minX || x >= rect.minX + rect.sizeX) return fallback;
         if (z < rect.minZ || z >= rect.minZ + rect.sizeZ) return fallback;
         return map.biomeIdAtUnchecked(x, z);
@@ -229,7 +225,7 @@ public final class BiomeDecorator implements SurfaceDecorator {
 
     // ---------------- helpers (inside BiomeDecorator) ----------------
 
-    private static short majorityBiome4(BiomeMap map, LayerRect rect, int wx, int wz, short self) {
+    private short majorityBiome4(BiomeMap map, LayerRect rect, int wx, int wz, short self) {
         // Sample neighbors safely within rect (avoid out-of-rect checks if you want strict only)
         short a = sample(map, rect, wx - 1, wz, self);
         short b = sample(map, rect, wx + 1, wz, self);
@@ -238,35 +234,13 @@ public final class BiomeDecorator implements SurfaceDecorator {
 
         // Simple plurality vote among {self,a,b,c,d}
         short best = self;
-        int bestCount = count(self, self, a, b, c, d);
+        int bestCount = GlobalTerrainUtils.count(self, self, a, b, c, d);
 
         short[] candidates = new short[]{a, b, c, d};
         for (short cand : candidates) {
-            int ct = count(cand, self, a, b, c, d);
+            int ct = GlobalTerrainUtils.count(cand, self, a, b, c, d);
             if (ct > bestCount) { bestCount = ct; best = cand; }
         }
         return best;
-    }
-
-    private static int count(short v, short s0, short s1, short s2, short s3, short s4) {
-        int c = 0;
-        if (s0 == v) c++;
-        if (s1 == v) c++;
-        if (s2 == v) c++;
-        if (s3 == v) c++;
-        if (s4 == v) c++;
-        return c;
-    }
-
-    private static float hash01(long seed, int x, int z) {
-        long h = seed;
-        h ^= (long) x * 0x9E3779B97F4A7C15L;
-        h ^= (long) z * 0xC2B2AE3D27D4EB4FL;
-        h ^= (h >>> 33);
-        h *= 0xFF51AFD7ED558CCDL;
-        h ^= (h >>> 33);
-        h *= 0xC4CEB9FE1A85EC53L;
-        h ^= (h >>> 33);
-        return ((h >>> 40) & 0xFFFFFFL) / (float) (1 << 24);
     }
 }

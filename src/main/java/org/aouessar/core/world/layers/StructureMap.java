@@ -13,7 +13,11 @@ public final class StructureMap {
         this.placements = List.copyOf(placements);
     }
 
-    public LayerRect rect() { return rect; }
+    public LayerRect rect() {
+        return rect;
+    }
 
-    public List<Placement> placements() { return placements; }
+    public List<Placement> placements() {
+        return placements;
+    }
 }

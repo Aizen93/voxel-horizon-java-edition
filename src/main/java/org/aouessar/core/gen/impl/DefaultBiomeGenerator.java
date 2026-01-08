@@ -16,7 +16,7 @@ public final class DefaultBiomeGenerator implements BiomeGenerator {
         short[] biomes = new short[n];
 
         // Domain warp to make biome borders more natural
-        FastNoiseLite warp = new FastNoiseLite(mixSeed(seed, 0x6A09E667));
+        FastNoiseLite warp = new FastNoiseLite(GlobalTerrainUtils.mixSeed(seed, 0x6A09E667));
         warp.SetNoiseType(FastNoiseLite.NoiseType.OpenSimplex2);
         warp.SetFrequency(EngineConfig.BIOME_WARP_FREQ);
         warp.SetFractalType(FastNoiseLite.FractalType.DomainWarpProgressive);
@@ -25,7 +25,7 @@ public final class DefaultBiomeGenerator implements BiomeGenerator {
         warp.SetFractalLacunarity(2.0f);
         warp.SetDomainWarpAmp(EngineConfig.BIOME_WARP_AMP_BLOCKS);
 
-        FastNoiseLite tempN = new FastNoiseLite(mixSeed(seed, 0xBB67AE85));
+        FastNoiseLite tempN = new FastNoiseLite(GlobalTerrainUtils.mixSeed(seed, 0xBB67AE85));
         tempN.SetNoiseType(FastNoiseLite.NoiseType.OpenSimplex2);
         tempN.SetFrequency(EngineConfig.BIOME_TEMP_FREQ);
         tempN.SetFractalType(FastNoiseLite.FractalType.FBm);
@@ -33,7 +33,7 @@ public final class DefaultBiomeGenerator implements BiomeGenerator {
         tempN.SetFractalGain(0.5f);
         tempN.SetFractalLacunarity(2.0f);
 
-        FastNoiseLite humidN = new FastNoiseLite(mixSeed(seed, 0x3C6EF372));
+        FastNoiseLite humidN = new FastNoiseLite(GlobalTerrainUtils.mixSeed(seed, 0x3C6EF372));
         humidN.SetNoiseType(FastNoiseLite.NoiseType.OpenSimplex2);
         humidN.SetFrequency(EngineConfig.BIOME_HUMID_FREQ);
         humidN.SetFractalType(FastNoiseLite.FractalType.FBm);
@@ -41,7 +41,7 @@ public final class DefaultBiomeGenerator implements BiomeGenerator {
         humidN.SetFractalGain(0.5f);
         humidN.SetFractalLacunarity(2.0f);
 
-        FastNoiseLite weirdN = new FastNoiseLite(mixSeed(seed, 0xA54FF53A));
+        FastNoiseLite weirdN = new FastNoiseLite(GlobalTerrainUtils.mixSeed(seed, 0xA54FF53A));
         weirdN.SetNoiseType(FastNoiseLite.NoiseType.OpenSimplex2);
         weirdN.SetFrequency(EngineConfig.BIOME_WEIRD_FREQ);
         weirdN.SetFractalType(FastNoiseLite.FractalType.FBm);
@@ -49,11 +49,11 @@ public final class DefaultBiomeGenerator implements BiomeGenerator {
         weirdN.SetFractalGain(0.5f);
         weirdN.SetFractalLacunarity(2.0f);
 
-        FastNoiseLite blendSel = new FastNoiseLite(mixSeed(seed, 0xD00DFEED));
+        FastNoiseLite blendSel = new FastNoiseLite(GlobalTerrainUtils.mixSeed(seed, 0xD00DFEED));
         blendSel.SetNoiseType(FastNoiseLite.NoiseType.OpenSimplex2);
         blendSel.SetFrequency(EngineConfig.BIOME_BLEND_SELECTOR_FREQ);
 
-        FastNoiseLite jungleSel = new FastNoiseLite(mixSeed(seed, 0xC0FFEE11));
+        FastNoiseLite jungleSel = new FastNoiseLite(GlobalTerrainUtils.mixSeed(seed, 0xC0FFEE11));
         jungleSel.SetNoiseType(FastNoiseLite.NoiseType.OpenSimplex2);
         jungleSel.SetFrequency(EngineConfig.BIOME_JUNGLE_SELECTOR_FREQ);
 
@@ -71,9 +71,9 @@ public final class DefaultBiomeGenerator implements BiomeGenerator {
                 float wz = p.y;
 
                 // Climate in [0..1]
-                float temp  = to01(tempN.GetNoise(wx + 10000.0f, wz - 10000.0f));
-                float humid = to01(humidN.GetNoise(wx - 20000.0f, wz + 20000.0f));
-                float weird = to01(weirdN.GetNoise(wx + 30000.0f, wz + 30000.0f));
+                float temp  = GlobalTerrainUtils.to01(tempN.GetNoise(wx + 10000.0f, wz - 10000.0f));
+                float humid = GlobalTerrainUtils.to01(humidN.GetNoise(wx - 20000.0f, wz + 20000.0f));
+                float weird = GlobalTerrainUtils.to01(weirdN.GetNoise(wx + 30000.0f, wz + 30000.0f));
 
                 int h = heightmap.heightAtUnchecked(wx0, wz0);
 
@@ -87,15 +87,15 @@ public final class DefaultBiomeGenerator implements BiomeGenerator {
                 float aboveSea = (h - EngineConfig.SEA_LEVEL) / 128.0f; // ~0..1
                 if (aboveSea < 0f) aboveSea = 0f;
                 if (aboveSea > 1f) aboveSea = 1f;
-                temp = clamp01(temp - aboveSea * EngineConfig.BIOME_ALTITUDE_COOLING);
+                temp = GlobalTerrainUtils.clamp01(temp - aboveSea * EngineConfig.BIOME_ALTITUDE_COOLING);
 
                 // ---- Jungle hard override (coherent patches, only when climate is clearly jungle) ----
                 float jungleSuit =
-                        smoothstep(EngineConfig.BIOME_JUNGLE_TEMP_MIN,  0.92f, temp) *
-                                smoothstep(EngineConfig.BIOME_JUNGLE_HUMID_MIN, 0.92f, humid);
+                        GlobalTerrainUtils.smoothstep(EngineConfig.BIOME_JUNGLE_TEMP_MIN,  0.92f, temp) *
+                        GlobalTerrainUtils.smoothstep(EngineConfig.BIOME_JUNGLE_HUMID_MIN, 0.92f, humid);
 
                 if (jungleSuit > 0.0f) {
-                    float jRnd = to01(jungleSel.GetNoise(wx0, wz0)); // coherent selector
+                    float jRnd = GlobalTerrainUtils.to01(jungleSel.GetNoise(wx0, wz0)); // coherent selector
                     // Higher jungleSuit => more likely to become jungle inside suitable area
                     float pJ = jungleSuit * EngineConfig.BIOME_JUNGLE_COVERAGE;
 
@@ -116,8 +116,10 @@ public final class DefaultBiomeGenerator implements BiomeGenerator {
                 {
                     float sc = score(temp, humid, weird, 0.50f, 0.45f, 0.50f, 0.0f);
                     if (sc < s0) {
-                        s1 = s0;  b1 = b0;
-                        s0 = sc;  b0 = EngineConfig.BIOME_PLAINS;
+                        s1 = s0;
+                        b1 = b0;
+                        s0 = sc;
+                        b0 = EngineConfig.BIOME_PLAINS;
                     } else if (sc < s1) {
                         s1 = sc;  b1 = EngineConfig.BIOME_PLAINS;
                     }
@@ -218,27 +220,22 @@ public final class DefaultBiomeGenerator implements BiomeGenerator {
                 }
 
                 // Base probability from score weights
-                float k = EngineConfig.BIOME_BLEND_SHARPNESS;
-                float w0 = fastExpNeg(k * s0);
-                float w1 = fastExpNeg(k * s1);
+                float w0 = GlobalTerrainUtils.fastExpNeg(EngineConfig.BIOME_BLEND_SHARPNESS * s0);
+                float w1 = GlobalTerrainUtils.fastExpNeg(EngineConfig.BIOME_BLEND_SHARPNESS * s1);
                 float t = w0 / (w0 + w1); // 0..1 probability of choosing b0 in the ambiguous zone
 
                 // GATE blending by margin: only blend when s1 is close to s0
                 float margin = s1 - s0; // >= 0
-                float gate = 1.0f - smoothstep(
+                float gate = 1.0f - GlobalTerrainUtils.smoothstep(
                     EngineConfig.BIOME_BLEND_MARGIN_START,
                     EngineConfig.BIOME_BLEND_MARGIN_END,
                     margin
                 );
-                // gate: 1 => fully blend, 0 => no blend (hard pick b0)
 
-                // Final probability:
-                // - if gate=0 => p0=1 (always b0)
-                // - if gate=1 => p0=t (true blend)
                 float p0 = 1.0f - gate + gate * t;
 
                 // Use low-frequency selector noise for coherent transition patches
-                float rnd = to01(blendSel.GetNoise(wx0, wz0));
+                float rnd = GlobalTerrainUtils.to01(blendSel.GetNoise(wx0, wz0));
 
                 biomes[i++] = (rnd < p0) ? b0 : b1;
 
@@ -248,41 +245,11 @@ public final class DefaultBiomeGenerator implements BiomeGenerator {
         return new BiomeMap(rect, biomes);
     }
 
-    private static float to01(float n) { return (n + 1.0f) * 0.5f; }
-
-    private static float clamp01(float v) {
-        if (v < 0f) return 0f;
-        if (v > 1f) return 1f;
-        return v;
-    }
-
     // Distance in (temp, humid) plus optional weirdness term
     private static float score(float t, float h, float w, float ct, float ch, float cw, float weirdWeight) {
         float dt = t - ct;
         float dh = h - ch;
         float dw = (w - cw);
         return dt * dt + dh * dh + (weirdWeight * (dw * dw));
-    }
-
-    // Cheap exp(-x) approximation (x >= 0)
-    private static float fastExpNeg(float x) {
-        if (x > 20f) return 0f;
-        float x2 = x * x;
-        return 1.0f / (1.0f + x + 0.48f * x2);
-    }
-
-    private static int mixSeed(long seed, int salt) {
-        long z = seed + 0x9E3779B97F4A7C15L * (long) salt;
-        z = (z ^ (z >>> 30)) * 0xBF58476D1CE4E5B9L;
-        z = (z ^ (z >>> 27)) * 0x94D049BB133111EBL;
-        z = (z ^ (z >>> 31));
-        return (int) z;
-    }
-
-    private static float smoothstep(float edge0, float edge1, float x) {
-        float t = (x - edge0) / (edge1 - edge0);
-        if (t < 0f) t = 0f;
-        if (t > 1f) t = 1f;
-        return t * t * (3f - 2f * t);
     }
 }

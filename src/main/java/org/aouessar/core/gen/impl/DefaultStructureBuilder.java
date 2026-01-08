@@ -35,7 +35,7 @@ public final class DefaultStructureBuilder implements StructureBuilder {
 
                 // ----- Trees (biome-specific types) -----
                 for (int t = 0; t < TREES_TRIES_PER_CHUNK; t++) {
-                    long h = hash(seed, cx, cz, 0x10_0000 + t);
+                    long h = GlobalTerrainUtils.hash(seed, cx, cz, 0x10_0000 + t);
 
                     int wx = cx * EngineConfig.CHUNK_SIZE + (int) (h & 15);
                     int wz = cz * EngineConfig.CHUNK_SIZE + (int) ((h >>> 4) & 15);
@@ -46,39 +46,16 @@ public final class DefaultStructureBuilder implements StructureBuilder {
 
                     short biome = biomeMap.biomeIdAtUnchecked(wx, wz);
 
-                    int r = (int) ((h >>> 12) & 0xFF);
-
-                    // Choose tree marker by biome
-                    short marker = 0;
-
-                    if (biome == EngineConfig.BIOME_FOREST) {
-                        if (r < 235) marker = Blocks.STRUCT_OAK_TREE;          // very dense oak
-                    } else if (biome == EngineConfig.BIOME_PLAINS) {
-                        if (r < 90) marker = Blocks.STRUCT_OAK_TREE;           // some oak
-                    } else if (biome == EngineConfig.BIOME_SAVANNA) {
-                        if (r < 140) marker = Blocks.STRUCT_ACACIA_TREE;       // dense acacia
-                    } else if (biome == EngineConfig.BIOME_JUNGLE) {
-                        // Jungle: lots of jungle trees + rare mega
-                        if (r < 220) marker = Blocks.STRUCT_JUNGLE_TREE;
-                        // mega jungle very rare
-                        int r2 = (int) ((h >>> 20) & 0xFF);
-                        if (r2 < 12) marker = Blocks.STRUCT_MEGA_JUNGLE;
-                    } else if (biome == EngineConfig.BIOME_SWAMP) {
-                        if (r < 80) marker = Blocks.STRUCT_OAK_TREE;           // some trees
-                    } else {
-                        // snow/desert: no trees for now
-                    }
+                    short marker = getMarker(h, biome);
 
                     if (marker == 0) continue;
 
-                    placements.add(new StructureMap.Placement(
-                            wx, surfaceY + 1, wz, marker
-                    ));
+                    placements.add(new StructureMap.Placement(wx, surfaceY + 1, wz, marker));
                 }
 
                 // ----- Plants (tall grass / dry wheat) -----
                 for (int t = 0; t < PLANTS_TRIES_PER_CHUNK; t++) {
-                    long h = hash(seed, cx, cz, 0x30_0000 + t);
+                    long h = GlobalTerrainUtils.hash(seed, cx, cz, 0x30_0000 + t);
 
                     int wx = cx * EngineConfig.CHUNK_SIZE + (int) (h & 15);
                     int wz = cz * EngineConfig.CHUNK_SIZE + (int) ((h >>> 4) & 15);
@@ -95,18 +72,22 @@ public final class DefaultStructureBuilder implements StructureBuilder {
                     int r = (int) ((h >>> 12) & 0xFF);
 
                     short plant;
-                    if (biome == EngineConfig.BIOME_SAVANNA) {
-                        // dry grass => dry wheat instead of tall grass
-                        if (r > 235) continue;
-                        plant = Blocks.DRY_WHEAT;
-                    } else if (biome == EngineConfig.BIOME_JUNGLE) {
-                        // jungle very dense undergrowth
-                        if (r > 245) continue;
-                        plant = Blocks.TALL_GRASS;
-                    } else {
-                        // plains/forest/swamp
-                        if (r > 235) continue;
-                        plant = Blocks.TALL_GRASS;
+                    switch (biome) {
+                        case EngineConfig.BIOME_SAVANNA -> {
+                            // dry grass => dry wheat instead of tall grass
+                            if (r > 235) continue;
+                            plant = Blocks.DRY_WHEAT;
+                        }
+                        case EngineConfig.BIOME_JUNGLE -> {
+                            // jungle very dense undergrowth
+                            if (r > 245) continue;
+                            plant = Blocks.TALL_GRASS;
+                        }
+                        default -> {
+                            // plains/forest/swamp
+                            if (r > 235) continue;
+                            plant = Blocks.TALL_GRASS;
+                        }
                     }
 
                     placements.add(new StructureMap.Placement(wx, surfaceY + 1, wz, plant));
@@ -114,7 +95,7 @@ public final class DefaultStructureBuilder implements StructureBuilder {
 
                 // ----- Flowers (mainly plains/forest) -----
                 for (int t = 0; t < FLOWERS_TRIES_PER_CHUNK; t++) {
-                    long h = hash(seed, cx, cz, 0x40_0000 + t);
+                    long h = GlobalTerrainUtils.hash(seed, cx, cz, 0x40_0000 + t);
 
                     int wx = cx * EngineConfig.CHUNK_SIZE + (int) (h & 15);
                     int wz = cz * EngineConfig.CHUNK_SIZE + (int) ((h >>> 4) & 15);
@@ -131,14 +112,12 @@ public final class DefaultStructureBuilder implements StructureBuilder {
 
                     short flower = (((h >>> 20) & 1) == 0) ? Blocks.FLOWER_RED : Blocks.FLOWER_YELLOW;
 
-                    placements.add(new StructureMap.Placement(
-                            wx, surfaceY + 1, wz, flower
-                    ));
+                    placements.add(new StructureMap.Placement(wx, surfaceY + 1, wz, flower));
                 }
 
                 // ----- Bushes (swamp + jungle) -----
                 for (int t = 0; t < BUSH_TRIES_PER_CHUNK; t++) {
-                    long h = hash(seed, cx, cz, 0x50_0000 + t);
+                    long h = GlobalTerrainUtils.hash(seed, cx, cz, 0x50_0000 + t);
 
                     int wx = cx * EngineConfig.CHUNK_SIZE + (int) (h & 15);
                     int wz = cz * EngineConfig.CHUNK_SIZE + (int) ((h >>> 4) & 15);
@@ -163,7 +142,7 @@ public final class DefaultStructureBuilder implements StructureBuilder {
 
                 // ----- Cactus (desert) -----
                 for (int t = 0; t < CACTUS_TRIES_PER_CHUNK; t++) {
-                    long h = hash(seed, cx, cz, 0x20_0000 + t);
+                    long h = GlobalTerrainUtils.hash(seed, cx, cz, 0x20_0000 + t);
 
                     int wx = cx * EngineConfig.CHUNK_SIZE + (int) (h & 15);
                     int wz = cz * EngineConfig.CHUNK_SIZE + (int) ((h >>> 4) & 15);
@@ -188,13 +167,36 @@ public final class DefaultStructureBuilder implements StructureBuilder {
         return new StructureMap(rect, placements);
     }
 
-    private static long hash(long seed, int cx, int cz, int salt) {
-        long v = seed;
-        v ^= cx * 0x632BE59BD9B4E019L;
-        v ^= cz * 0x9E3779B97F4A7C15L;
-        v ^= salt * 0x85157AF5L;
-        v ^= (v >>> 27);
-        v *= 0x94D049BB133111EBL;
-        return v ^ (v >>> 31);
+    private static short getMarker(long h, short biome) {
+        int r = (int) ((h >>> 12) & 0xFF);
+
+        // Choose tree marker by biome
+        short marker = 0;
+
+        switch (biome) {
+            case EngineConfig.BIOME_FOREST -> {
+                if (r < 235) marker = Blocks.STRUCT_OAK_TREE; // very dense oak
+            }
+            case EngineConfig.BIOME_PLAINS -> {
+                if (r < 90) marker = Blocks.STRUCT_OAK_TREE;  // some oak
+            }
+            case EngineConfig.BIOME_SAVANNA -> {
+                if (r < 140) marker = Blocks.STRUCT_ACACIA_TREE; // dense acacia
+            }
+            case EngineConfig.BIOME_JUNGLE -> {
+                // Jungle: lots of jungle trees + rare mega
+                if (r < 220) marker = Blocks.STRUCT_JUNGLE_TREE;
+                // mega jungle very rare
+                int r2 = (int) ((h >>> 20) & 0xFF);
+                if (r2 < 12) marker = Blocks.STRUCT_MEGA_JUNGLE;
+            }
+            case EngineConfig.BIOME_SWAMP -> {
+                if (r < 80) marker = Blocks.STRUCT_OAK_TREE; // some trees
+            }
+            default -> {
+                // snow/desert: no trees for now
+            }
+        }
+        return marker;
     }
 }

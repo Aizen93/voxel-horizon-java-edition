@@ -14,7 +14,7 @@ public final class SimpleWorldGenerator implements WorldGenerator {
         int[] heights = new int[n];
 
         // --- Noise stack (all deterministic from seed) ---
-        FastNoiseLite warp = new FastNoiseLite(mixSeed(seed, 0xA1B2C3D4));
+        FastNoiseLite warp = new FastNoiseLite(GlobalTerrainUtils.mixSeed(seed, 0xA1B2C3D4));
         warp.SetNoiseType(FastNoiseLite.NoiseType.OpenSimplex2);
         warp.SetFrequency(EngineConfig.TERRAIN_WARP_FREQ);
         warp.SetFractalType(FastNoiseLite.FractalType.DomainWarpProgressive);
@@ -23,7 +23,7 @@ public final class SimpleWorldGenerator implements WorldGenerator {
         warp.SetFractalLacunarity(2.0f);
         warp.SetDomainWarpAmp(EngineConfig.TERRAIN_WARP_AMP_BLOCKS);
 
-        FastNoiseLite continents = new FastNoiseLite(mixSeed(seed, 0x11111111));
+        FastNoiseLite continents = new FastNoiseLite(GlobalTerrainUtils.mixSeed(seed, 0x11111111));
         continents.SetNoiseType(FastNoiseLite.NoiseType.OpenSimplex2);
         continents.SetFrequency(EngineConfig.TERRAIN_CONTINENT_FREQ);
         continents.SetFractalType(FastNoiseLite.FractalType.FBm);
@@ -31,7 +31,7 @@ public final class SimpleWorldGenerator implements WorldGenerator {
         continents.SetFractalGain(0.5f);
         continents.SetFractalLacunarity(2.0f);
 
-        FastNoiseLite large = new FastNoiseLite(mixSeed(seed, 0x12121212));
+        FastNoiseLite large = new FastNoiseLite(GlobalTerrainUtils.mixSeed(seed, 0x12121212));
         large.SetNoiseType(FastNoiseLite.NoiseType.OpenSimplex2);
         large.SetFrequency(EngineConfig.TERRAIN_LARGE_FREQ);
         large.SetFractalType(FastNoiseLite.FractalType.FBm);
@@ -39,7 +39,7 @@ public final class SimpleWorldGenerator implements WorldGenerator {
         large.SetFractalGain(0.5f);
         large.SetFractalLacunarity(2.0f);
 
-        FastNoiseLite erosion = new FastNoiseLite(mixSeed(seed, 0x22222222));
+        FastNoiseLite erosion = new FastNoiseLite(GlobalTerrainUtils.mixSeed(seed, 0x22222222));
         erosion.SetNoiseType(FastNoiseLite.NoiseType.OpenSimplex2);
         erosion.SetFrequency(EngineConfig.TERRAIN_LARGE_FREQ);
         erosion.SetFractalType(FastNoiseLite.FractalType.FBm);
@@ -47,7 +47,7 @@ public final class SimpleWorldGenerator implements WorldGenerator {
         erosion.SetFractalGain(0.5f);
         erosion.SetFractalLacunarity(2.0f);
 
-        FastNoiseLite ridges = new FastNoiseLite(mixSeed(seed, 0x33333333));
+        FastNoiseLite ridges = new FastNoiseLite(GlobalTerrainUtils.mixSeed(seed, 0x33333333));
         ridges.SetNoiseType(FastNoiseLite.NoiseType.OpenSimplex2);
         ridges.SetFrequency(EngineConfig.TERRAIN_RIDGE_FREQ);
         ridges.SetFractalType(FastNoiseLite.FractalType.Ridged);
@@ -55,7 +55,7 @@ public final class SimpleWorldGenerator implements WorldGenerator {
         ridges.SetFractalGain(0.55f);
         ridges.SetFractalLacunarity(2.05f);
 
-        FastNoiseLite detail = new FastNoiseLite(mixSeed(seed, 0x44444444));
+        FastNoiseLite detail = new FastNoiseLite(GlobalTerrainUtils.mixSeed(seed, 0x44444444));
         detail.SetNoiseType(FastNoiseLite.NoiseType.OpenSimplex2);
         detail.SetFrequency(EngineConfig.TERRAIN_DETAIL_FREQ);
         detail.SetFractalType(FastNoiseLite.FractalType.FBm);
@@ -85,10 +85,10 @@ public final class SimpleWorldGenerator implements WorldGenerator {
                 float d = detail.GetNoise(wx, wz);     // detail
 
                 // Land factor [0..1] with smooth coasts
-                float land = smoothstep(EngineConfig.TERRAIN_COAST_OCEAN, EngineConfig.TERRAIN_COAST_LAND, c);
+                float land = GlobalTerrainUtils.smoothstep(EngineConfig.TERRAIN_COAST_OCEAN, EngineConfig.TERRAIN_COAST_LAND, c);
 
                 // Inland uplift
-                float inland = smoothstep(EngineConfig.TERRAIN_INLAND_START, EngineConfig.TERRAIN_INLAND_FULL, c);
+                float inland = GlobalTerrainUtils.smoothstep(EngineConfig.TERRAIN_INLAND_START, EngineConfig.TERRAIN_INLAND_FULL, c);
                 float uplift = inland * inland * EngineConfig.TERRAIN_BASE_LAND_UPLIFT;
 
                 // Rolling elevation + hills on land
@@ -96,11 +96,11 @@ public final class SimpleWorldGenerator implements WorldGenerator {
                 float hills   = d * EngineConfig.TERRAIN_HILL_AMPLITUDE * land;
 
                 // Mountain mask
-                float ridge01 = clamp01(Math.abs(r));
-                float ridgePresence = smoothstep(EngineConfig.TERRAIN_RIDGE_MIN, EngineConfig.TERRAIN_RIDGE_MAX, ridge01);
+                float ridge01 = GlobalTerrainUtils.clamp01(Math.abs(r));
+                float ridgePresence = GlobalTerrainUtils.smoothstep(EngineConfig.TERRAIN_RIDGE_MIN, EngineConfig.TERRAIN_RIDGE_MAX, ridge01);
 
                 float erosion01 = (e + 1.0f) * 0.5f;
-                float erosionSuppress = 1.0f - smoothstep(EngineConfig.TERRAIN_EROSION_MIN, EngineConfig.TERRAIN_EROSION_MAX, erosion01);
+                float erosionSuppress = 1.0f - GlobalTerrainUtils.smoothstep(EngineConfig.TERRAIN_EROSION_MIN, EngineConfig.TERRAIN_EROSION_MAX, erosion01);
 
                 float mountainMask = land * ridgePresence * erosionSuppress;
 
@@ -117,7 +117,7 @@ public final class SimpleWorldGenerator implements WorldGenerator {
                 float landHeight  = sea + uplift + rolling + hills + mountains;
 
                 // NEW: continuous shoreline blend (removes the “hard switch” cliff behavior)
-                float shoreBlend = smoothstep(0.35f, 0.65f, land); // widen/narrow the coastal transition here
+                float shoreBlend = GlobalTerrainUtils.smoothstep(0.35f, 0.65f, land); // widen/narrow the coastal transition here
                 float height = org.joml.Math.lerp(oceanHeight, landHeight, shoreBlend);
 
                 int h = Math.round(height);
@@ -131,29 +131,5 @@ public final class SimpleWorldGenerator implements WorldGenerator {
         }
 
         return new Heightmap(rect, heights);
-    }
-
-    private static float smoothstep(float edge0, float edge1, float x) {
-        float t = (x - edge0) / (edge1 - edge0);
-        if (t < 0f) t = 0f;
-        if (t > 1f) t = 1f;
-        return t * t * (3f - 2f * t);
-    }
-
-    private static float clamp01(float v) {
-        if (v < 0f) return 0f;
-        if (v > 1f) return 1f;
-        return v;
-    }
-
-    /**
-     * Stable 64->32 seed mixing. Keeps worlds deterministic and avoids correlated noise instances.
-     */
-    private static int mixSeed(long seed, int salt) {
-        long z = seed + 0x9E3779B97F4A7C15L * (long) salt;
-        z = (z ^ (z >>> 30)) * 0xBF58476D1CE4E5B9L;
-        z = (z ^ (z >>> 27)) * 0x94D049BB133111EBL;
-        z = (z ^ (z >>> 31));
-        return (int) z;
     }
 }
