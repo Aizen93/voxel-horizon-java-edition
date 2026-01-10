@@ -14,6 +14,10 @@ public class GlobalTerrainUtils {
         return (int) z;
     }
 
+    public static float clamp(float v, float lo, float hi) {
+        return (v < lo) ? lo : (v > hi) ? hi : v;
+    }
+
     public static float clamp01(float v) {
         if (v < 0f) return 0f;
         if (v > 1f) return 1f;

@@ -26,8 +26,8 @@ public final class EngineConfig {
     public static final int CPU_WORKERS = Math.max(2, Runtime.getRuntime().availableProcessors() - 1);
 
     // ======================= TERRAIN TUNING =======================
-// All values are in "blocks" or "1/blocks" (frequency).
-// Changing these changes world shape but remains deterministic (seed+coord).
+    // All values are in "blocks" or "1/blocks" (frequency).
+    // Changing these changes world shape but remains deterministic (seed+coord).
 
     // World scale (bigger denominator => bigger features)
     public static final float TERRAIN_CONTINENT_FREQ = 1.0f / 8192.0f;
@@ -40,7 +40,7 @@ public final class EngineConfig {
     public static final float TERRAIN_WARP_AMP_BLOCKS = 180.0f;
 
     // Coastline / landmass shape
-// land = smoothstep(COAST_OCEAN, COAST_LAND, continentalness)
+    // land = smoothstep(COAST_OCEAN, COAST_LAND, continentalness)
     public static final float TERRAIN_COAST_OCEAN = -0.25f;
     public static final float TERRAIN_COAST_LAND  =  0.10f;
 
@@ -66,6 +66,25 @@ public final class EngineConfig {
     public static final float TERRAIN_EROSION_MIN = 0.20f;
     public static final float TERRAIN_EROSION_MAX = 0.80f;
     public static final float TERRAIN_RIDGE_EXP = 1.55f;
+
+    // + => more land, - => more ocean
+    public static final float TERRAIN_CONTINENT_BIAS = 0.12f; // try 0.08..0.18
+    // >1 makes extremes more common (bigger solid land + deep ocean), <1 makes more coasts/islands
+    public static final float TERRAIN_CONTINENT_CONTRAST = 1.00f;
+
+    // --- Mountain ranges (rare, long chains) (Himalaya-like )---
+    public static final float TERRAIN_RANGE_FREQ = 1.0f / 8192.0f;   // big features
+    public static final float TERRAIN_RANGE_MIN  = 0.60f;            // higher => rarer
+    public static final float TERRAIN_RANGE_MAX  = 0.88f;
+    public static final float TERRAIN_RANGE_POWER = 2.2f;            // higher => more "only in cores"
+    public static final float TERRAIN_RANGE_EXTRA_AMPLITUDE = 55.0f; // added on top of normal mountains
+
+    // --- Ultra-rare mega peaks (Everest-like) ---
+    public static final float TERRAIN_PEAK_FREQ      = 1.0f / 4096.0f; // not too large, rarity comes from threshold+power
+    public static final float TERRAIN_PEAK_THRESHOLD = 0.92f;          // higher => rarer
+    public static final float TERRAIN_PEAK_POWER     = 10.0f;          // higher => sharper/rarer
+    public static final float TERRAIN_PEAK_AMPLITUDE = 120.0f;         // extra blocks for mega peaks
+
 
     // ===================== END TERRAIN TUNING =====================
 
@@ -102,6 +121,27 @@ public final class EngineConfig {
     public static final short BIOME_SWAMP  = 5;
     public static final short BIOME_JUNGLE = 6;
 
+
+    public static final float BIOME_SIZE_SCALE = 0.50f; // 0.70 => ~30% smaller biomes
+    // Bigger climate zones (macro) = large biomes
+    public static final float BIOME_MACRO_FREQ_MULT = 0.12f / BIOME_SIZE_SCALE;  // macroFreq = baseFreq * this
+    public static final float BIOME_MACRO_MIX       = 0.80f;  // 0..1 (higher => bigger contiguous biomes)
+
+    // Make boundaries non-straight (wiggle thresholds)
+    public static final float BIOME_ZONE_SEL_FREQ   = (1.0f / 8192.0f) / BIOME_SIZE_SCALE;
+    public static final float BIOME_ZONE_WIGGLE     = 0.08f;  // threshold +- wiggle
+
+    // Climate thresholds (0..1)
+    public static final float BIOME_TEMP_COLD_MAX   = 0.30f;
+    public static final float BIOME_TEMP_HOT_MIN    = 0.72f;
+
+    public static final float BIOME_HUMID_DESERT_MAX  = 0.26f;
+    public static final float BIOME_HUMID_JUNGLE_MIN  = 0.74f;
+
+    public static final float BIOME_HUMID_FOREST_MIN  = 0.60f;
+    public static final float BIOME_HUMID_SWAMP_MIN   = 0.82f;
+
+
     // ===================== END BIOME TUNING =====================
 
 
@@ -127,22 +167,8 @@ public final class EngineConfig {
 
     // ===============================================================================
 
-    // ======================= BIOME BLEND GATING =======================
-    // Scores are squared distances, so margins are small numbers (~0..0.2 typically).
-    // If mixing is too wide -> LOWER START/END? (actually: lower => less blending)
-    // Practical tuning:
-    // - Start ~0.020
-    // - End   ~0.060
-    public static final float BIOME_BLEND_MARGIN_START = 0.020f;
-    public static final float BIOME_BLEND_MARGIN_END   = 0.060f;
-
-    // Selector noise frequency (bigger denominator => larger patches)
-    public static final float BIOME_BLEND_SELECTOR_FREQ = 1.0f / 192.0f;
-    // ===================== END BIOME BLEND GATING =====================
-
     public static final float BIOME_JUNGLE_TEMP_MIN  = 0.72f;
     public static final float BIOME_JUNGLE_HUMID_MIN = 0.72f;
-    public static final float BIOME_JUNGLE_BIAS = 0.05f;
     // Jungle patch selector (coherent blobs)
     public static final float BIOME_JUNGLE_SELECTOR_FREQ = 1.0f / 768.0f;
     // How much of "suitable" area becomes jungle (0..1)

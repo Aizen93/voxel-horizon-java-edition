@@ -63,6 +63,24 @@ public final class SimpleWorldGenerator implements WorldGenerator {
         detail.SetFractalGain(0.5f);
         detail.SetFractalLacunarity(2.0f);
 
+        // NEW (additive): rare range booster mask (does NOT gate normal mountains)
+        FastNoiseLite range = new FastNoiseLite(GlobalTerrainUtils.mixSeed(seed, 0x55555555));
+        range.SetNoiseType(FastNoiseLite.NoiseType.OpenSimplex2);
+        range.SetFrequency(EngineConfig.TERRAIN_RANGE_FREQ);
+        range.SetFractalType(FastNoiseLite.FractalType.Ridged);
+        range.SetFractalOctaves(3);
+        range.SetFractalGain(0.55f);
+        range.SetFractalLacunarity(2.05f);
+
+        // NEW (additive): rare peaks
+        FastNoiseLite peaks = new FastNoiseLite(GlobalTerrainUtils.mixSeed(seed, 0x66666666));
+        peaks.SetNoiseType(FastNoiseLite.NoiseType.OpenSimplex2);
+        peaks.SetFrequency(EngineConfig.TERRAIN_PEAK_FREQ);
+        peaks.SetFractalType(FastNoiseLite.FractalType.FBm);
+        peaks.SetFractalOctaves(3);
+        peaks.SetFractalGain(0.5f);
+        peaks.SetFractalLacunarity(2.0f);
+
         final int sea = EngineConfig.SEA_LEVEL;
 
         int i = 0;
@@ -78,51 +96,110 @@ public final class SimpleWorldGenerator implements WorldGenerator {
                 float wz = p.y;
 
                 // Fields in [-1..1]
-                float c = continents.GetNoise(wx, wz); // continentalness
-                float L = large.GetNoise(wx, wz);      // large-scale elevation
-                float e = erosion.GetNoise(wx, wz);    // erosion mask
-                float r = ridges.GetNoise(wx, wz);     // ridges
-                float d = detail.GetNoise(wx, wz);     // detail
+                float cRaw = continents.GetNoise(wx, wz);
+                float c = cRaw * EngineConfig.TERRAIN_CONTINENT_CONTRAST + EngineConfig.TERRAIN_CONTINENT_BIAS;
+                c = GlobalTerrainUtils.clamp(c, -1.0f, 1.0f);
+
+                float L = large.GetNoise(wx, wz);
+                float e = erosion.GetNoise(wx, wz);
+                float r = ridges.GetNoise(wx, wz);
+                float d = detail.GetNoise(wx, wz);
 
                 // Land factor [0..1] with smooth coasts
-                float land = GlobalTerrainUtils.smoothstep(EngineConfig.TERRAIN_COAST_OCEAN, EngineConfig.TERRAIN_COAST_LAND, c);
+                float land = GlobalTerrainUtils.smoothstep(
+                        EngineConfig.TERRAIN_COAST_OCEAN,
+                        EngineConfig.TERRAIN_COAST_LAND,
+                        c
+                );
 
                 // Inland uplift
-                float inland = GlobalTerrainUtils.smoothstep(EngineConfig.TERRAIN_INLAND_START, EngineConfig.TERRAIN_INLAND_FULL, c);
+                float inland = GlobalTerrainUtils.smoothstep(
+                        EngineConfig.TERRAIN_INLAND_START,
+                        EngineConfig.TERRAIN_INLAND_FULL,
+                        c
+                );
                 float uplift = inland * inland * EngineConfig.TERRAIN_BASE_LAND_UPLIFT;
 
                 // Rolling elevation + hills on land
                 float rolling = L * EngineConfig.TERRAIN_LARGE_AMPLITUDE * land;
                 float hills   = d * EngineConfig.TERRAIN_HILL_AMPLITUDE * land;
 
-                // Mountain mask
+                // -------------------- Mountains (BASE: unchanged) --------------------
+
                 float ridge01 = GlobalTerrainUtils.clamp01(Math.abs(r));
-                float ridgePresence = GlobalTerrainUtils.smoothstep(EngineConfig.TERRAIN_RIDGE_MIN, EngineConfig.TERRAIN_RIDGE_MAX, ridge01);
+                float ridgePresence = GlobalTerrainUtils.smoothstep(
+                        EngineConfig.TERRAIN_RIDGE_MIN,
+                        EngineConfig.TERRAIN_RIDGE_MAX,
+                        ridge01
+                );
 
                 float erosion01 = (e + 1.0f) * 0.5f;
-                float erosionSuppress = 1.0f - GlobalTerrainUtils.smoothstep(EngineConfig.TERRAIN_EROSION_MIN, EngineConfig.TERRAIN_EROSION_MAX, erosion01);
+                float erosionSuppress = 1.0f - GlobalTerrainUtils.smoothstep(
+                        EngineConfig.TERRAIN_EROSION_MIN,
+                        EngineConfig.TERRAIN_EROSION_MAX,
+                        erosion01
+                );
 
+                // IMPORTANT: keep your original mountain mask (no range gating!)
                 float mountainMask = land * ridgePresence * erosionSuppress;
 
                 float mountains = (float) Math.pow(ridge01, EngineConfig.TERRAIN_RIDGE_EXP)
                         * EngineConfig.TERRAIN_MOUNTAIN_AMPLITUDE * mountainMask;
 
-                // Ocean depth
+                // -------------------- NEW: Rare long ranges (additive boost) --------------------
+
+                // A macro mask that occasionally boosts mountains into big belts.
+                float range01 = GlobalTerrainUtils.clamp01(Math.abs(range.GetNoise(wx, wz)));
+                float rangePresence = GlobalTerrainUtils.smoothstep(
+                        EngineConfig.TERRAIN_RANGE_MIN,
+                        EngineConfig.TERRAIN_RANGE_MAX,
+                        range01
+                );
+                rangePresence = (float) Math.pow(rangePresence, EngineConfig.TERRAIN_RANGE_POWER);
+
+                // Boost mostly inland (optional but helps avoid insane coastal walls).
+                float rangeBoost = rangePresence * inland;
+
+                // Add extra height on top of the *existing* mountains (no behavior loss elsewhere)
+                float rangeMountains = (float) Math.pow(ridge01, EngineConfig.TERRAIN_RIDGE_EXP)
+                        * EngineConfig.TERRAIN_RANGE_EXTRA_AMPLITUDE
+                        * mountainMask
+                        * rangeBoost;
+
+                mountains += rangeMountains;
+
+                // -------------------- NEW: Ultra-rare mega peaks (additive) --------------------
+
+                float peak01 = (peaks.GetNoise(wx, wz) + 1.0f) * 0.5f; // [0..1]
+                float peakPresence = GlobalTerrainUtils.smoothstep(
+                        EngineConfig.TERRAIN_PEAK_THRESHOLD,
+                        1.0f,
+                        peak01
+                );
+                peakPresence = (float) Math.pow(peakPresence, EngineConfig.TERRAIN_PEAK_POWER);
+
+                // Keep peaks on ridge spines, inside boosted ranges, and inside mountains
+                float megaPeaks = peakPresence
+                        * EngineConfig.TERRAIN_PEAK_AMPLITUDE
+                        * mountainMask
+                        * ridgePresence
+                        * rangeBoost;
+
+                mountains += megaPeaks;
+
+                // -------------------- Oceans --------------------
+
                 float offshore = 1.0f - land;
                 float oceanDepth = offshore * (EngineConfig.TERRAIN_OCEAN_BASE_DEPTH + offshore * EngineConfig.TERRAIN_OCEAN_EXTRA_DEPTH);
                 oceanDepth += offshore * (d * EngineConfig.TERRAIN_SEABED_VARIATION);
 
-                // Compute two candidate heights
                 float oceanHeight = sea - oceanDepth + (L * EngineConfig.TERRAIN_OCEAN_LARGE_VARIATION);
                 float landHeight  = sea + uplift + rolling + hills + mountains;
 
-                // NEW: continuous shoreline blend (removes the “hard switch” cliff behavior)
-                float shoreBlend = GlobalTerrainUtils.smoothstep(0.35f, 0.65f, land); // widen/narrow the coastal transition here
+                float shoreBlend = GlobalTerrainUtils.smoothstep(0.35f, 0.65f, land);
                 float height = org.joml.Math.lerp(oceanHeight, landHeight, shoreBlend);
 
                 int h = Math.round(height);
-
-                // Clamp to your world bounds
                 if (h < EngineConfig.MIN_Y) h = EngineConfig.MIN_Y;
                 if (h > EngineConfig.MAX_Y) h = EngineConfig.MAX_Y;
 

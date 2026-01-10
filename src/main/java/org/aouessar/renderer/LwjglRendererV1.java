@@ -268,7 +268,8 @@ public final class LwjglRendererV1 {
                         ", opaque: [Drawn=" + drawnOpaque + ", Count=" + opaqueCache.meshCount() + "]" +
                         ", cutout: [Drawn=" + drawnCutout + ", Count=" + cutoutCache.meshCount() + "]" +
                         ", trans: [Drawn=" + drawnTrans + ", Count=" + translucentCache.meshCount() + "]" +
-                        ", inFlight = " + (opaqueCache.inFlightCount() + cutoutCache.inFlightCount() + translucentCache.inFlightCount()) + ")"
+                        ", inFlight = " + (opaqueCache.inFlightCount() + cutoutCache.inFlightCount() + translucentCache.inFlightCount()) + ")" +
+                        ", Pos[" + camera.position.x + ", " + camera.position.y + ", " + camera.position.z + "]"
                     );
                     acc = 0.0;
                     frames = 0;
