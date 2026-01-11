@@ -13,7 +13,7 @@ public final class DefaultWorldCarver implements WorldCarver {
         LayerRect rect = heightmap.rect();
         int n = rect.sizeX * rect.sizeZ;
         byte[] carved = new byte[n];
-/*
+
         // Placeholder "river-ish" mask based on noise threshold
         FastNoiseLite fn = new FastNoiseLite((int) (seed ^ 0x94D049BB133111EBL));
         fn.SetNoiseType(FastNoiseLite.NoiseType.OpenSimplex2);
@@ -29,7 +29,7 @@ public final class DefaultWorldCarver implements WorldCarver {
                 carved[i++] = (Math.abs(v) < 0.035f) ? (byte) 1 : (byte) 0;
             }
         }
-*/
+
         return new CarveMask(rect, carved);
     }
 }

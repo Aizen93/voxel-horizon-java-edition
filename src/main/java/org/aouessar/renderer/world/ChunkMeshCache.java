@@ -71,7 +71,9 @@ public final class ChunkMeshCache implements AutoCloseable {
         return entries.size();
     }
 
-    public int entryCount() { return entries.size(); }
+    public int entryCount() {
+        return entries.size();
+    }
 
     public int meshCount() {
         int n = 0;

@@ -115,25 +115,6 @@ public final class RegionStreamingService implements ChunkProvider, WorldSampler
         scheduleRegion(WorldGrid.regionOfChunk(cx, cz));
     }
 
-    private void scheduleRegion(RegionPos rp) {
-        // Deduplicate in-flight builds.
-        inFlight.computeIfAbsent(rp, pos ->
-            CompletableFuture.supplyAsync(() -> buildRegion(pos), regionExecutor)
-                .whenComplete((region, err) -> {
-                    inFlight.remove(pos);
-                    if (err == null && region != null) {
-                        ready.put(pos, region);
-                        // Optional: invalidate derived chunk cache for chunks in this region
-                        // For now, keep simple: clear all chunk cache entries for that region.
-                        invalidateChunksInRegion(pos);
-                    } else {
-                        // In production you would log this.
-                        // Keep system alive: next request will reschedule.
-                    }
-                }
-            )
-        );
-    }
 
     private Region buildRegion(RegionPos pos) {
         LayerRect baseRect = RegionRect.rectOf(pos);
@@ -169,5 +150,40 @@ public final class RegionStreamingService implements ChunkProvider, WorldSampler
     @Override
     public void close() {
         regionExecutor.shutdownNow();
+    }
+
+    // -----------------------
+    // For Biome Search Algorithm
+    // -----------------------
+
+    public CompletableFuture<Void> ensureRegionForWorld(int wx, int wz) {
+        int cx = WorldGrid.worldBlockToChunkX(wx);
+        int cz = WorldGrid.worldBlockToChunkZ(wz);
+        RegionPos rp = WorldGrid.regionOfChunk(cx, cz);
+        return ensureRegion(rp).thenApply(r -> null);
+    }
+
+    public CompletableFuture<Region> ensureRegion(RegionPos rp) {
+        Region r = ready.get(rp);
+        if (r != null) return CompletableFuture.completedFuture(r);
+        return startRegionBuild(rp);
+    }
+
+    // refactor scheduleRegion to use this
+    private CompletableFuture<Region> startRegionBuild(RegionPos rp) {
+        return inFlight.computeIfAbsent(rp, pos ->
+            CompletableFuture.supplyAsync(() -> buildRegion(pos), regionExecutor)
+                .whenComplete((region, err) -> {
+                    inFlight.remove(pos);
+                    if (err == null && region != null) {
+                        ready.put(pos, region);
+                        invalidateChunksInRegion(pos);
+                    }
+                })
+        );
+    }
+
+    private void scheduleRegion(RegionPos rp) {
+        ensureRegion(rp);
     }
 }

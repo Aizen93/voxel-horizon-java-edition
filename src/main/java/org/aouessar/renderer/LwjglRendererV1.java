@@ -1,6 +1,5 @@
 package org.aouessar.renderer;
 
-import org.aouessar.core.api.ChunkProvider;
 import org.aouessar.core.api.WorldAccess;
 import org.aouessar.renderer.atlas.Atlas;
 import org.aouessar.renderer.atlas.AtlasLoader;
@@ -22,7 +21,7 @@ import static org.lwjgl.opengl.GL11.*;
 
 public final class LwjglRendererV1 {
 
-    private final ChunkProvider chunkProvider;
+    private final WorldAccess world;
     private final int radius; // view radius in chunks
 
     // Keep a little hysteresis to avoid eviction thrashing
@@ -31,7 +30,7 @@ public final class LwjglRendererV1 {
     private final LongKeyList visibleKeys = new LongKeyList(8192);
 
     public LwjglRendererV1(WorldAccess world, int radius) {
-        this.chunkProvider = world.chunkProvider();
+        this.world = world;
         this.radius = radius;
         this.evictRadius = radius + 2;
     }
@@ -134,7 +133,7 @@ public final class LwjglRendererV1 {
             setupShaderCommonUniforms(shaderTranslucent);
 
             Camera camera = new Camera();
-            CameraController controller = new CameraController(camera, window);
+            CameraController controller = new CameraController(camera, window, world.biomeLocator());
             GreedyChunkMesher mesher = new GreedyChunkMesher();
 
             double lastTime = glfwGetTime();
@@ -179,7 +178,7 @@ public final class LwjglRendererV1 {
                     radius,
                     RendererConfig.SUBMIT_BUDGET_PER_FRAME,
                     (mx, mz) -> {
-                        var meshes = mesher.buildChunkMeshes(chunkProvider, atlas, brm, mx, mz);
+                        var meshes = mesher.buildChunkMeshes(world.chunkProvider(), atlas, brm, mx, mz);
                         cutoutCache.requestOne(mx, mz, meshes.cutout());
                         translucentCache.requestOne(mx, mz, meshes.translucent());
                         return meshes.opaque();
