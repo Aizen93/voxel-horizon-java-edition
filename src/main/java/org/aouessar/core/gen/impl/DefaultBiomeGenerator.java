@@ -1,6 +1,7 @@
 package org.aouessar.core.gen.impl;
 
 import org.aouessar.core.gen.BiomeGenerator;
+import org.aouessar.core.math.GlobalTerrainUtils;
 import org.aouessar.core.noise.FastNoiseLite;
 import org.aouessar.core.world.layers.BiomeMap;
 import org.aouessar.core.world.layers.Heightmap;

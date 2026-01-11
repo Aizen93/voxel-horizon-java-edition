@@ -1,6 +1,6 @@
 package org.aouessar.core.world.chunk;
 
-import org.aouessar.core.gen.impl.GlobalTerrainUtils;
+import org.aouessar.core.math.GlobalTerrainUtils;
 import org.aouessar.core.world.Blocks;
 import org.aouessar.core.world.Region;
 import org.aouessar.core.world.WorldGrid;

@@ -1,4 +1,4 @@
-package org.aouessar.core.gen.impl;
+package org.aouessar.core.math;
 
 public class GlobalTerrainUtils {
     private GlobalTerrainUtils() {}

@@ -1,6 +1,7 @@
 package org.aouessar.core.gen.impl;
 
 import org.aouessar.core.gen.WorldGenerator;
+import org.aouessar.core.math.GlobalTerrainUtils;
 import org.aouessar.core.noise.FastNoiseLite;
 import org.aouessar.core.world.layers.Heightmap;
 import org.aouessar.core.world.layers.LayerRect;
