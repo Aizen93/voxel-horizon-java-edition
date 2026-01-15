@@ -1,7 +1,6 @@
 package org.aouessar.renderer;
 
 import org.aouessar.core.api.WorldAccess;
-import org.aouessar.core.stream.RegionStreamingService;
 import org.aouessar.renderer.atlas.Atlas;
 import org.aouessar.renderer.atlas.AtlasLoader;
 import org.aouessar.renderer.camera.Camera;
@@ -30,6 +29,9 @@ public final class LwjglRendererV1 {
     private final int evictRadius;
     private final FogCycle fogCycle = new FogCycle();
     private final LongKeyList visibleKeys = new LongKeyList(8192);
+
+    // Eviction throttling - don't evict every frame
+    private int evictCounter = 0;
 
     public LwjglRendererV1(WorldAccess world, int radius) {
         this.world = world;
@@ -121,17 +123,17 @@ public final class LwjglRendererV1 {
 
                 ChunkMeshCache opaqueCache = new ChunkMeshCache(
                         Math.max(1, Runtime.getRuntime().availableProcessors() - 1),
-                        128,
+                        RendererConfig.MAX_IN_FLIGHT_MESHES,
                         GlMeshTiled::new
                 );
                 ChunkMeshCache cutoutCache = new ChunkMeshCache(
                         Math.max(1, Runtime.getRuntime().availableProcessors() - 1),
-                        128,
+                        RendererConfig.MAX_IN_FLIGHT_MESHES,
                         GlMeshTiled::new
                 );
                 ChunkMeshCache translucentCache = new ChunkMeshCache(
                         Math.max(1, Runtime.getRuntime().availableProcessors() - 1),
-                        128,
+                        RendererConfig.MAX_IN_FLIGHT_MESHES,
                         GlMeshTiled::new
                 )
         ) {
@@ -257,11 +259,19 @@ public final class LwjglRendererV1 {
                 glDepthMask(true);
 
                 // -----------------------------
-                // EVICT
+                // EVICT (throttled - not every frame)
                 // -----------------------------
-                opaqueCache.evictOutside(centerCx, centerCz, evictRadius);
-                cutoutCache.evictOutside(centerCx, centerCz, evictRadius);
-                translucentCache.evictOutside(centerCx, centerCz, evictRadius);
+                if (++evictCounter >= RendererConfig.EVICT_INTERVAL_FRAMES) {
+                    evictCounter = 0;
+                    opaqueCache.evictOutside(centerCx, centerCz, evictRadius);
+                    cutoutCache.evictOutside(centerCx, centerCz, evictRadius);
+                    translucentCache.evictOutside(centerCx, centerCz, evictRadius);
+
+                    // Evict core data (regions + chunks) to prevent memory leaks
+                    if (world.streamingControl() != null) {
+                        world.streamingControl().evictOutside(centerCx, centerCz, evictRadius + 4);
+                    }
+                }
 
                 // -----------------------------
                 // HUD text (update once/sec)
@@ -291,6 +301,12 @@ public final class LwjglRendererV1 {
                             .append(" E=").append(translucentCache.entryCount())
                             .append(" R=").append(translucentCache.readyCount())
                             .append(" F=").append(translucentCache.inFlightCount()).append('\n');
+
+                    // Core cache stats
+                    if (world.streamingControl() != null) {
+                        debug.append("Core:    Regions=").append(world.streamingControl().regionCount())
+                                .append(" Chunks=").append(world.streamingControl().chunkCount()).append('\n');
+                    }
 
                     long usedMb = (Runtime.getRuntime().totalMemory() - Runtime.getRuntime().freeMemory()) / (1024 * 1024);
                     long totalMb = Runtime.getRuntime().totalMemory() / (1024 * 1024);

@@ -31,7 +31,7 @@ public final class Main {
 
         BiomeLocator biomeLocator = new BiomeLocatorImpl(world);
 
-        WorldAccess access = new WorldAccess(world, world, biomeLocator);
+        WorldAccess access = new WorldAccess(world, world, biomeLocator, world);
 
         // Renderer v1 (near-field)
         new LwjglRendererV1(access, 32).run();

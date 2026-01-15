@@ -1,6 +1,7 @@
 package org.aouessar.core.stream;
 
 import org.aouessar.core.api.ChunkProvider;
+import org.aouessar.core.api.StreamingControl;
 import org.aouessar.core.api.WorldSampler;
 import org.aouessar.core.gen.RegionPipeline;
 import org.aouessar.core.world.*;
@@ -13,7 +14,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.*;
 
-public final class RegionStreamingService implements ChunkProvider, WorldSampler, AutoCloseable {
+public final class RegionStreamingService implements ChunkProvider, WorldSampler, StreamingControl, AutoCloseable {
 
     private final long seed;
     private final RegionPipeline pipeline;
@@ -26,6 +27,9 @@ public final class RegionStreamingService implements ChunkProvider, WorldSampler
     private final ConcurrentHashMap<RegionPos, CompletableFuture<Region>> inFlight = new ConcurrentHashMap<>();
     // Optional small chunk cache (derived). Keep bounded later.
     private final ConcurrentHashMap<ChunkPos, Chunk> chunkCache = new ConcurrentHashMap<>();
+
+    // Eviction configuration (chunks)
+    private static final int DEFAULT_EVICT_RADIUS_CHUNKS = 48; // ~3 regions from center
 
 
     public RegionStreamingService(long seed, RegionPipeline pipeline) {
@@ -150,6 +154,94 @@ public final class RegionStreamingService implements ChunkProvider, WorldSampler
     @Override
     public void close() {
         regionExecutor.shutdownNow();
+    }
+
+    // -----------------------
+    // Eviction (memory management)
+    // -----------------------
+
+    /**
+     * Evict regions and chunks outside the given radius (in chunks) from the center.
+     * Call this periodically from the renderer to prevent memory leaks.
+     */
+    @Override
+    public void evictOutside(int centerCx, int centerCz, int radiusChunks) {
+        // Evict regions: a region is kept if ANY chunk within it is inside the radius
+        int regionRadiusChunks = radiusChunks + EngineConfig.REGION_SIZE_CHUNKS;
+        int centerRx = WorldGrid.regionOfChunk(centerCx, centerCz).rx();
+        int centerRz = WorldGrid.regionOfChunk(centerCx, centerCz).rz();
+
+        for (var it = ready.entrySet().iterator(); it.hasNext(); ) {
+            Map.Entry<RegionPos, Region> entry = it.next();
+            RegionPos rp = entry.getKey();
+
+            // Distance in chunks from region center to player chunk
+            int regionCenterCx = rp.rx() * EngineConfig.REGION_SIZE_CHUNKS + EngineConfig.REGION_SIZE_CHUNKS / 2;
+            int regionCenterCz = rp.rz() * EngineConfig.REGION_SIZE_CHUNKS + EngineConfig.REGION_SIZE_CHUNKS / 2;
+
+            int dx = Math.abs(regionCenterCx - centerCx);
+            int dz = Math.abs(regionCenterCz - centerCz);
+
+            if (dx > regionRadiusChunks || dz > regionRadiusChunks) {
+                it.remove();
+            }
+        }
+
+        // Cancel in-flight builds that are too far away
+        for (var it = inFlight.entrySet().iterator(); it.hasNext(); ) {
+            Map.Entry<RegionPos, CompletableFuture<Region>> entry = it.next();
+            RegionPos rp = entry.getKey();
+
+            int regionCenterCx = rp.rx() * EngineConfig.REGION_SIZE_CHUNKS + EngineConfig.REGION_SIZE_CHUNKS / 2;
+            int regionCenterCz = rp.rz() * EngineConfig.REGION_SIZE_CHUNKS + EngineConfig.REGION_SIZE_CHUNKS / 2;
+
+            int dx = Math.abs(regionCenterCx - centerCx);
+            int dz = Math.abs(regionCenterCz - centerCz);
+
+            if (dx > regionRadiusChunks || dz > regionRadiusChunks) {
+                CompletableFuture<Region> future = entry.getValue();
+                if (!future.isDone()) {
+                    future.cancel(true);
+                }
+                it.remove();
+            }
+        }
+
+        // Evict chunks outside radius
+        for (var it = chunkCache.entrySet().iterator(); it.hasNext(); ) {
+            Map.Entry<ChunkPos, Chunk> entry = it.next();
+            ChunkPos cp = entry.getKey();
+
+            int dx = Math.abs(cp.cx() - centerCx);
+            int dz = Math.abs(cp.cz() - centerCz);
+
+            if (dx > radiusChunks || dz > radiusChunks) {
+                it.remove();
+            }
+        }
+    }
+
+    /**
+     * Evict with default radius
+     */
+    public void evictOutside(int centerCx, int centerCz) {
+        evictOutside(centerCx, centerCz, DEFAULT_EVICT_RADIUS_CHUNKS);
+    }
+
+    /**
+     * Get the number of cached regions (for debug overlay)
+     */
+    @Override
+    public int regionCount() {
+        return ready.size();
+    }
+
+    /**
+     * Get the number of cached chunks (for debug overlay)
+     */
+    @Override
+    public int chunkCount() {
+        return chunkCache.size();
     }
 
     // -----------------------

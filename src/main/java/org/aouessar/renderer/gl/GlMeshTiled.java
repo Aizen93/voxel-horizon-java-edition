@@ -74,7 +74,6 @@ public final class GlMeshTiled implements IGlMesh {
     public void draw() {
         glBindVertexArray(vao);
         glDrawElements(GL_TRIANGLES, indexCount, GL_UNSIGNED_INT, 0L);
-        glBindVertexArray(0);
     }
 
     @Override

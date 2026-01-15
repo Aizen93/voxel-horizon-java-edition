@@ -82,4 +82,13 @@ public final class RendererConfig {
     //----------------------------------
     public static final int SUBMIT_BUDGET_PER_FRAME = 64;
     public static final int UPLOAD_BUDGET_PER_FRAME = 128;
+
+    //----------------------------------
+    // Performance tuning
+    //----------------------------------
+    /** How often to run eviction (in frames). Higher = less CPU overhead but more memory */
+    public static final int EVICT_INTERVAL_FRAMES = 30;
+
+    /** Max in-flight mesh builds per cache */
+    public static final int MAX_IN_FLIGHT_MESHES = 128;
 }
