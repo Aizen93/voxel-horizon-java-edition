@@ -1,6 +1,7 @@
 package org.aouessar.renderer;
 
 import org.aouessar.core.api.WorldAccess;
+import org.aouessar.core.stream.RegionStreamingService;
 import org.aouessar.renderer.atlas.Atlas;
 import org.aouessar.renderer.atlas.AtlasLoader;
 import org.aouessar.renderer.camera.Camera;
@@ -9,6 +10,7 @@ import org.aouessar.renderer.gl.GlMeshTiled;
 import org.aouessar.renderer.gl.GlShaderProgram;
 import org.aouessar.renderer.gl.GlTexture2D;
 import org.aouessar.renderer.mesh.GreedyChunkMesher;
+import org.aouessar.renderer.ui.DebugOverlay;
 import org.aouessar.renderer.world.*;
 import org.aouessar.shared.EngineConfig;
 import org.joml.FrustumIntersection;
@@ -94,7 +96,13 @@ public final class LwjglRendererV1 {
         Atlas atlas = new AtlasLoader().loadFromResources(RendererConfig.ATLAS_JSON);
         BlockRenderMap brm = new BlockRenderMap();
 
+        // Debug HUD text: update once per second, render every frame
+        final StringBuilder debug = new StringBuilder(2048);
+
         try (
+                // NOW it's safe: OpenGL context + capabilities are live.
+                DebugOverlay hud = new DebugOverlay();
+
                 SkyRenderer sky = new SkyRenderer(RendererConfig.SKY_VERT, RendererConfig.SKY_FRAG);
 
                 GlShaderProgram shader = new GlShaderProgram(
@@ -256,23 +264,51 @@ public final class LwjglRendererV1 {
                 translucentCache.evictOutside(centerCx, centerCz, evictRadius);
 
                 // -----------------------------
-                // FPS
+                // HUD text (update once/sec)
                 // -----------------------------
                 acc += dt;
                 frames++;
                 if (acc >= 1.0) {
-                    glfwSetWindowTitle(window,
-                    "Voxel Renderer v1 (r = " + radius +
-                        ", FPS: " + frames +
-                        ", opaque: [Drawn=" + drawnOpaque + ", Count=" + opaqueCache.meshCount() + "]" +
-                        ", cutout: [Drawn=" + drawnCutout + ", Count=" + cutoutCache.meshCount() + "]" +
-                        ", trans: [Drawn=" + drawnTrans + ", Count=" + translucentCache.meshCount() + "]" +
-                        ", inFlight = " + (opaqueCache.inFlightCount() + cutoutCache.inFlightCount() + translucentCache.inFlightCount()) + ")" +
-                        ", Pos[" + camera.position.x + ", " + camera.position.y + ", " + camera.position.z + "]"
-                    );
+                    debug.setLength(0);
+
+                    debug.append("FPS: ").append(frames).append('\n');
+                    debug.append("radius: ").append(radius).append('\n');
+
+                    debug.append("Opaque:  D=").append(drawnOpaque)
+                            .append(" M=").append(opaqueCache.meshCount())
+                            .append(" E=").append(opaqueCache.entryCount())
+                            .append(" R=").append(opaqueCache.readyCount())
+                            .append(" F=").append(opaqueCache.inFlightCount()).append('\n');
+
+                    debug.append("Cutout:  D=").append(drawnCutout)
+                            .append(" M=").append(cutoutCache.meshCount())
+                            .append(" E=").append(cutoutCache.entryCount())
+                            .append(" R=").append(cutoutCache.readyCount())
+                            .append(" F=").append(cutoutCache.inFlightCount()).append('\n');
+
+                    debug.append("Trans:   D=").append(drawnTrans)
+                            .append(" M=").append(translucentCache.meshCount())
+                            .append(" E=").append(translucentCache.entryCount())
+                            .append(" R=").append(translucentCache.readyCount())
+                            .append(" F=").append(translucentCache.inFlightCount()).append('\n');
+
+                    long usedMb = (Runtime.getRuntime().totalMemory() - Runtime.getRuntime().freeMemory()) / (1024 * 1024);
+                    long totalMb = Runtime.getRuntime().totalMemory() / (1024 * 1024);
+                    debug.append("Heap: ").append(usedMb).append(" / ").append(totalMb).append(" MB\n");
+
+                    debug.append("Pos: ")
+                            .append(camera.position.x).append(", ")
+                            .append(camera.position.y).append(", ")
+                            .append(camera.position.z).append('\n');
+
                     acc = 0.0;
                     frames = 0;
                 }
+
+                // -----------------------------
+                // HUD render (every frame)
+                // -----------------------------
+                hud.render(fbW[0], fbH[0], 8f, 8f, debug.toString());
 
                 glfwSwapBuffers(window);
             }

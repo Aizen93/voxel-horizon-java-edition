@@ -81,6 +81,10 @@ public final class ChunkMeshCache implements AutoCloseable {
         return n;
     }
 
+    public int readyCount() {
+        return readyQueue.size();
+    }
+
     /**
      * Render thread only.
      * Upload completed MeshData into GL mesh (budgeted).
