@@ -6,6 +6,7 @@ import org.aouessar.core.world.Region;
 import org.aouessar.core.world.WorldGrid;
 import org.aouessar.core.world.layers.RegionLayers;
 import org.aouessar.core.world.layers.StructureMap;
+import org.aouessar.core.world.layers.WaterLayer;
 import org.aouessar.shared.EngineConfig;
 
 import java.util.ArrayList;
@@ -44,6 +45,10 @@ public final class ChunkBuilder {
 
                 boolean carvedRiver = layers.carveMask().isCarvedColumn(wx, wz);
 
+                // Water level from the WaterLayer (NO_WATER if dry)
+                int waterLevel = layers.waterLayer().waterLevelAtUnchecked(wx, wz);
+                boolean hasWater = (waterLevel != WaterLayer.NO_WATER);
+
                 // Beach / shoreline override (helps blending + feels Minecraft)
                 boolean isBeach = Math.abs(surfaceY - sea) <= EngineConfig.BEACH_BAND;
                 if (isBeach && surfaceY >= sea - 2 && surfaceY <= sea + 6) {
@@ -61,7 +66,7 @@ public final class ChunkBuilder {
                 }
 
                 // Underwater seabed: sand/gravel/clay mix
-                boolean underwater = surfaceY < sea;
+                boolean underwater = hasWater && surfaceY < waterLevel;
                 if (underwater) {
                     int h = GlobalTerrainUtils.hash8(wx, wz);
                     if (h < EngineConfig.OCEAN_CLAY_CHANCE_PER_256) {
@@ -100,13 +105,11 @@ public final class ChunkBuilder {
                         continue;
                     }
 
-                    // Above surface => air / water
+                    // Above surface => air / water (using WaterLayer)
                     if (wy > carvedSurfaceY) {
-                        // Water rules:
-                        // - if below/at sea level => water, but rivers in cold biomes can freeze on top
-                        if (wy <= sea) {
-                            // Optional: freeze surface water in snow biome
-                            if ((biome == EngineConfig.BIOME_SNOW) && wy == sea) {
+                        if (hasWater && wy <= waterLevel) {
+                            // Freeze surface water in snow biome
+                            if ((biome == EngineConfig.BIOME_SNOW) && wy == waterLevel) {
                                 id = Blocks.ICE;
                             } else {
                                 id = Blocks.WATER;

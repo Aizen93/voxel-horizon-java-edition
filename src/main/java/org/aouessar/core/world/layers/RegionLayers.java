@@ -5,5 +5,6 @@ public record RegionLayers(
         BiomeMap biomeMap,
         CarveMask carveMask,
         SurfaceRules surfaceRules,
+        WaterLayer waterLayer,
         StructureMap structureMap
 ) {}

@@ -7,6 +7,7 @@ import org.aouessar.core.gen.impl.BiomeDecorator;
 import org.aouessar.core.gen.impl.DefaultBiomeGenerator;
 import org.aouessar.core.gen.impl.DefaultRegionPipeline;
 import org.aouessar.core.gen.impl.DefaultStructureBuilder;
+import org.aouessar.core.gen.impl.DefaultWaterGenerator;
 import org.aouessar.core.gen.impl.DefaultWorldCarver;
 import org.aouessar.core.gen.impl.SimpleWorldGenerator;
 import org.aouessar.core.stream.BiomeLocatorImpl;
@@ -24,6 +25,7 @@ public final class Main {
             new DefaultBiomeGenerator(),
             new DefaultWorldCarver(),
             new BiomeDecorator(),
+            new DefaultWaterGenerator(),
             new DefaultStructureBuilder()
         );
 

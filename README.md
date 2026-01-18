@@ -121,6 +121,7 @@ Heightmap heightmap = terrainGenerator.generateHeightmap(seed, rect);
 BiomeMap biomeMap = biomeGenerator.generateBiomes(seed, heightmap);
 CarveMask carveMask = carver.generateCarveMask(seed, heightmap);
 SurfaceRules surfaceRules = surfaceDecorator.generateSurfaceRules(heightmap, biomeMap);
+WaterLayer waterLayer = waterGenerator.generateWaterLayer(seed, heightmap, carveMask);
 StructureMap structures = structureBuilder.placeStructures(seed, heightmap, biomeMap);
 ```
 
@@ -131,6 +132,7 @@ record RegionLayers(
     BiomeMap biomeMap,
     CarveMask carveMask,
     SurfaceRules surfaceRules,
+    WaterLayer waterLayer,
     StructureMap structureMap
 ) {}
 ```
@@ -204,7 +206,21 @@ record RegionLayers(
         - Produces structure placement data only
         - No block placement
 
-6. ### Chunk composition
+6. ### Water
+    ```java
+    interface WaterGenerator {
+        WaterLayer generateWaterLayer(long seed, Heightmap heightmap, CarveMask carveMask);
+    }
+    ```
+
+   Implementation:
+    - DefaultWaterGenerator
+        - Responsibilities: Ocean/sea water, river water levels
+        - Produces water level per column (or NO_WATER)
+        - Runs AFTER carving (knows river positions)
+        - Enables future: lakes, swamps, variable river levels
+
+7. ### Chunk composition
    the only place blocks exist
     ```java
     final class ChunkBuilder {
@@ -213,12 +229,12 @@ record RegionLayers(
     }
     ```
     - Responsibilities :
-        - Combine: Heightmap, CarveMask, SurfaceRules, StructureMap
+        - Combine: Heightmap, CarveMask, SurfaceRules, WaterLayer, StructureMap
         - No generation logic 
         - No caching 
         - Deterministic
 
-7. ## Core streaming service (mandatory)
+8. ## Core streaming service (mandatory)
     ```java
     interface ChunkProvider {
         Chunk getChunk(int cx, int cz);
@@ -233,7 +249,7 @@ record RegionLayers(
       - No out-of-rect exceptions
       - Region boundaries never leak
 
-8. ### Rendering
+9. ### Rendering
     ```java
     interface Renderer {
         void render(Camera camera);
