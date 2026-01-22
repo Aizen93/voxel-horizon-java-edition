@@ -471,19 +471,19 @@ public final class ChunkBuilder {
     ) {
         // Trunk
         for (int dy = 0; dy < trunkH; dy++) {
-            setIfInThisChunk(chunk, cx, cz, wxBase, wyBase + dy, wzBase, Blocks.JUNGLE_LOG);
+            setIfInThisChunk(chunk, cx, cz, wxBase, wyBase + dy, wzBase, Blocks.SPRUCE_LOG);
         }
 
         int topY = wyBase + trunkH - 1;
 
         // 4 leaves around the top log (perfectly symmetric)
-        setLeavesIfAir(chunk, cx, cz, wxBase + 1, topY, wzBase,     Blocks.JUNGLE_LEAVES);
-        setLeavesIfAir(chunk, cx, cz, wxBase - 1, topY, wzBase,     Blocks.JUNGLE_LEAVES);
-        setLeavesIfAir(chunk, cx, cz, wxBase,     topY, wzBase + 1, Blocks.JUNGLE_LEAVES);
-        setLeavesIfAir(chunk, cx, cz, wxBase,     topY, wzBase - 1, Blocks.JUNGLE_LEAVES);
+        setLeavesIfAir(chunk, cx, cz, wxBase + 1, topY, wzBase,     Blocks.SPRUCE_LEAVES);
+        setLeavesIfAir(chunk, cx, cz, wxBase - 1, topY, wzBase,     Blocks.SPRUCE_LEAVES);
+        setLeavesIfAir(chunk, cx, cz, wxBase,     topY, wzBase + 1, Blocks.SPRUCE_LEAVES);
+        setLeavesIfAir(chunk, cx, cz, wxBase,     topY, wzBase - 1, Blocks.SPRUCE_LEAVES);
 
         // Optional tip
-        setLeavesIfAir(chunk, cx, cz, wxBase, topY + 1, wzBase, Blocks.JUNGLE_LEAVES);
+        setLeavesIfAir(chunk, cx, cz, wxBase, topY + 1, wzBase, Blocks.SPRUCE_LEAVES);
 
         // Thin pyramid foliage (radius never exceeds 3)
         int foliageBottomY = wyBase + Math.max(2, trunkH / 3);
@@ -499,7 +499,7 @@ public final class ChunkBuilder {
             // (Optional) make it a bit thinner sometimes while staying symmetric
             if (layer % 4 == 3 && radius > 1) radius--;
 
-            placeSpruceLayerSymmetric(chunk, cx, cz, wxBase, y, wzBase, radius, Blocks.JUNGLE_LEAVES);
+            placeSpruceLayerSymmetric(chunk, cx, cz, wxBase, y, wzBase, radius, Blocks.SPRUCE_LEAVES);
         }
     }
 

@@ -35,6 +35,11 @@ public final class Blocks {
     public static final short ACACIA_LEAVES         = 29;
     public static final short JUNGLE_LOG            = 30;
     public static final short JUNGLE_LEAVES         = 31;
+    public static final short SNOW_LOG              = 32;
+    public static final short SNOW_LEAVES           = 33;
+    public static final short SPRUCE_LEAVES         = 34;
+    public static final short SPRUCE_LOG            = 35;
+    public static final short BERRY_BUSH            = 36;
 
     // "structure marker ids" : placements can use these ids to request multi-block placement
     public static final short STRUCT_OAK_TREE       = 100;
@@ -42,15 +47,42 @@ public final class Blocks {
     public static final short STRUCT_JUNGLE_TREE    = 102;
     public static final short STRUCT_MEGA_JUNGLE    = 103;
 
+    /**
+     * Get the render layer for the given block ID.
+     * TRANSLUCENT - for blocks like water and glass - that have transparency
+     * CUTOUT - for blocks like leaves and plants - that has transparency in some parts
+     * OPAQUE - for solid blocks
+     * @param blockId block ID
+     * @return RenderLayer
+     */
     public static RenderLayer getRenderLayer(short blockId) {
         return switch (blockId) {
             case WATER, GLASS -> RenderLayer.TRANSLUCENT;
 
-            case LEAVES, OAK_LEAVES, BUSH, TALL_GRASS, FLOWER_RED,
+            case LEAVES, OAK_LEAVES, BUSH, TALL_GRASS, FLOWER_RED, SNOW_LEAVES,
                  FLOWER_YELLOW, DRY_WHEAT, JUNGLE_LEAVES, ACACIA_LEAVES
                     -> RenderLayer.CUTOUT;
 
             default -> RenderLayer.OPAQUE;
         };
     }
+
+    /**
+     * Check if the block is rendered as a billboard (a flat texture that always faces the camera) Two faces forming an X.
+     * @param blockId
+     * @return
+     */
+    public static boolean isBillboard(short blockId) {
+        return switch (blockId) {
+            case Blocks.BUSH,
+                 Blocks.TALL_GRASS,
+                 Blocks.FLOWER_YELLOW,
+                 Blocks.FLOWER_RED,
+                 Blocks.DRY_WHEAT,
+                 Blocks.BERRY_BUSH
+                    -> true;
+            default -> false;
+        };
+    }
+
 }

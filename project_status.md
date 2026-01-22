@@ -181,8 +181,7 @@ record RegionLayers(
 
    Implementation:
     - DefaultWorldCarver
-        - Responsibilities: Rivers, caves, ravines ...etc
-        - Rivers must always reach oceans
+        - Responsibilities: Caves, Ravines, Underground tunnels, Large voids
         - No block placement
 
 4. ### Surface
@@ -222,7 +221,7 @@ record RegionLayers(
     - DefaultWaterGenerator
         - Responsibilities: Ocean/sea water, river water levels
         - Produces water level per column (or NO_WATER)
-        - Runs AFTER carving (knows river positions)
+        - Runs AFTER carving
         - Enables future: lakes, swamps, variable river levels
 
 7. ### Chunk composition

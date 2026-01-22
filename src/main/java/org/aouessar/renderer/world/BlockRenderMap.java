@@ -14,6 +14,7 @@ public final class BlockRenderMap {
         // Defaults (adjust to match your atlas names)
         putAllFaces(Blocks.BEDROCK, "bedrock");
         putAllFaces(Blocks.BUSH, "bush");
+        putAllFaces(Blocks.BERRY_BUSH, "sweet_berry_bush");
 
         map.put(Blocks.CACTUS, new FaceTiles(
             "cactus_side", // +X
@@ -26,19 +27,19 @@ public final class BlockRenderMap {
 
         putAllFaces(Blocks.CLAY, "clay");
         putAllFaces(Blocks.DEEPSLATE, "deepslate");
-        putAllFaces(Blocks.DIRT, "dirt");
+        putAllFaces(Blocks.DIRT, "dirt2");
         putAllFaces(Blocks.FLOWER_RED, "flower_red");
         putAllFaces(Blocks.FLOWER_YELLOW, "flower_yellow");
         putAllFaces(Blocks.GLASS, "glass");
 
         // Grass: top/side/bottom
         map.put(Blocks.GRASS, new FaceTiles(
-            "grass_side", // +X
-            "grass_side", // -X
-            "grass",      // +Y (top)
-            "dirt",       // -Y (bottom)
-            "grass_side", // +Z
-            "grass_side"  // -Z
+            "grass_side2", // +X
+            "grass_side2", // -X
+            "grass2",      // +Y (top)
+            "dirt2",       // -Y (bottom)
+            "grass_side2", // +Z
+            "grass_side2"  // -Z
         ));
 
         putAllFaces(Blocks.GRAVEL, "gravel");
@@ -102,6 +103,26 @@ public final class BlockRenderMap {
                 "acacia_log_top", // -Y (bottom)
                 "acacia_log_side", // +Z
                 "acacia_log_side"  // -Z
+        ));
+
+        putAllFaces(Blocks.SNOW_LEAVES, "snow_leaves");
+        map.put(Blocks.SNOW_LOG, new FaceTiles(
+                "oak_log", // +X
+                "oak_log", // -X
+                "oak_log_bot", // +Y (top)
+                "oak_log_bot", // -Y (bottom)
+                "oak_log", // +Z
+                "oak_log"  // -Z
+        ));
+
+        putAllFaces(Blocks.SPRUCE_LEAVES, "spruce_leaves");
+        map.put(Blocks.SPRUCE_LOG, new FaceTiles(
+                "spruce_log", // +X
+                "spruce_log", // -X
+                "spruce_log_top", // +Y (top)
+                "spruce_log_top", // -Y (bottom)
+                "spruce_log", // +Z
+                "spruce_log"  // -Z
         ));
 
         putAllFaces(Blocks.JUNGLE_LEAVES, "jungle_leaves");
