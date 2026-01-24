@@ -58,6 +58,9 @@ public class BiomeMapViewer extends JFrame {
     private int hoverHeight = 0;
     private boolean isDragging = false;
 
+    // Grid display toggle
+    private boolean showGrid = false;
+
     // Async tile generation
     private final ExecutorService tileExecutor = Executors.newFixedThreadPool(
             Math.max(2, Runtime.getRuntime().availableProcessors() - 1)
@@ -72,10 +75,19 @@ public class BiomeMapViewer extends JFrame {
     private static final Color WATER_COLOR = new Color(30, 60, 180);
     private static final Color LOADING_COLOR = new Color(60, 60, 60);
     private static final Color BEACH_COLOR = new Color(250, 222, 85);  // Sandy yellow
+    private static final Color OCEAN_COLOR = new Color(30, 100, 200);  // Lighter blue for shallow ocean
+    private static final Color DEEP_OCEAN_COLOR = new Color(20, 50, 150);  // Darker blue for deep ocean
     private static final String BEACH_NAME = "Beach";
+    private static final String OCEAN_NAME = "Ocean";
+    private static final String DEEP_OCEAN_NAME = "Deep Ocean";
 
-    // Special biome ID for beach (display only, not a real biome)
+    // Special biome ID for display only (not real biomes)
     private static final short DISPLAY_BEACH = 100;
+    private static final short DISPLAY_OCEAN = 101;
+    private static final short DISPLAY_DEEP_OCEAN = 102;
+
+    // Threshold for deep ocean (blocks below sea level)
+    private static final int DEEP_OCEAN_THRESHOLD = 15;
 
     static {
         // Initialize biome colors and names
@@ -222,6 +234,10 @@ public class BiomeMapViewer extends JFrame {
                         regionCache.clear();
                         regionsInProgress.clear();
                     }
+                    case KeyEvent.VK_G -> {
+                        // Toggle grid display
+                        showGrid = !showGrid;
+                    }
                 }
                 mapPanel.repaint();
             }
@@ -256,8 +272,10 @@ public class BiomeMapViewer extends JFrame {
             addLegendItem(panel, BIOME_COLORS[i], BIOME_NAMES[i]);
         }
 
-        // Add Beach to the legend
+        // Add special terrain types to the legend
         addLegendItem(panel, BEACH_COLOR, BEACH_NAME);
+        addLegendItem(panel, OCEAN_COLOR, OCEAN_NAME);
+        addLegendItem(panel, DEEP_OCEAN_COLOR, DEEP_OCEAN_NAME);
 
         return panel;
     }
@@ -291,8 +309,20 @@ public class BiomeMapViewer extends JFrame {
         hoverBiomeId = bm.biomeIdAt(hoverWorldX, hoverWorldZ);
         hoverHeight = hm.heightAt(hoverWorldX, hoverWorldZ);
 
-        // Check if this is a beach area - EXACT same logic as ChunkBuilder.java
         int seaLevel = EngineConfig.SEA_LEVEL;
+
+        // Check if this is ocean (below sea level)
+        if (hoverHeight < seaLevel) {
+            int depth = seaLevel - hoverHeight;
+            if (depth >= DEEP_OCEAN_THRESHOLD) {
+                hoverBiomeId = DISPLAY_DEEP_OCEAN;
+            } else {
+                hoverBiomeId = DISPLAY_OCEAN;
+            }
+            return;  // Ocean overrides all other biome detection
+        }
+
+        // Check if this is a beach area - EXACT same logic as ChunkBuilder.java
         int beachBand = EngineConfig.BEACH_BAND;
         boolean isBeach = Math.abs(hoverHeight - seaLevel) <= beachBand &&
                           hoverHeight >= seaLevel - 2 && hoverHeight <= seaLevel + 6;
@@ -338,6 +368,11 @@ public class BiomeMapViewer extends JFrame {
             for (int rx = viewMinX; rx <= viewMaxX; rx++) {
                 drawRegion(g, rx, rz, pw, ph, regionPixelSize);
             }
+        }
+
+        // Draw region grid if enabled
+        if (showGrid) {
+            drawRegionGrid(g, pw, ph, viewMinX, viewMaxX, viewMinZ, viewMaxZ, regionPixelSize);
         }
 
         // Draw crosshair at center
@@ -416,6 +451,50 @@ public class BiomeMapViewer extends JFrame {
                 regionsInProgress.remove(regionKey);
             }
         });
+    }
+
+    private void drawRegionGrid(Graphics2D g, int pw, int ph, int viewMinX, int viewMaxX, int viewMinZ, int viewMaxZ, double regionPixelSize) {
+        // Set grid line style
+        g.setColor(new Color(255, 255, 255, 120));
+        g.setStroke(new BasicStroke(1.0f));
+
+        // Draw vertical lines
+        for (int rx = viewMinX; rx <= viewMaxX + 1; rx++) {
+            double worldX = rx * REGION_SIZE;
+            int screenX = (int) ((worldX - centerX) * zoom + pw / 2.0);
+            g.drawLine(screenX, 0, screenX, ph);
+        }
+
+        // Draw horizontal lines
+        for (int rz = viewMinZ; rz <= viewMaxZ + 1; rz++) {
+            double worldZ = rz * REGION_SIZE;
+            int screenZ = (int) ((worldZ - centerZ) * zoom + ph / 2.0);
+            g.drawLine(0, screenZ, pw, screenZ);
+        }
+
+        // Draw region coordinates in each cell if zoomed in enough
+        if (regionPixelSize > 80) {
+            g.setFont(new Font("Monospaced", Font.BOLD, 11));
+            for (int rz = viewMinZ; rz <= viewMaxZ; rz++) {
+                for (int rx = viewMinX; rx <= viewMaxX; rx++) {
+                    double worldRegionX = rx * REGION_SIZE;
+                    double worldRegionZ = rz * REGION_SIZE;
+                    int screenX = (int) ((worldRegionX - centerX) * zoom + pw / 2.0);
+                    int screenZ = (int) ((worldRegionZ - centerZ) * zoom + ph / 2.0);
+
+                    String coordText = String.format("R(%d,%d)", rx, rz);
+
+                    // Draw text with shadow for readability
+                    g.setColor(new Color(0, 0, 0, 150));
+                    g.drawString(coordText, screenX + 6, screenZ + 16);
+                    g.setColor(new Color(255, 255, 255, 200));
+                    g.drawString(coordText, screenX + 5, screenZ + 15);
+                }
+            }
+        }
+
+        // Reset stroke
+        g.setStroke(new BasicStroke(1.0f));
     }
 
     private void evictDistantRegions() {
@@ -579,6 +658,12 @@ public class BiomeMapViewer extends JFrame {
         if (hoverBiomeId == DISPLAY_BEACH) {
             biomeName = BEACH_NAME;
             biomeColor = BEACH_COLOR;
+        } else if (hoverBiomeId == DISPLAY_OCEAN) {
+            biomeName = OCEAN_NAME;
+            biomeColor = OCEAN_COLOR;
+        } else if (hoverBiomeId == DISPLAY_DEEP_OCEAN) {
+            biomeName = DEEP_OCEAN_NAME;
+            biomeColor = DEEP_OCEAN_COLOR;
         } else if (hoverBiomeId >= 0 && hoverBiomeId < BIOME_NAMES.length) {
             biomeName = BIOME_NAMES[hoverBiomeId];
             biomeColor = BIOME_COLORS[hoverBiomeId];
@@ -623,24 +708,27 @@ public class BiomeMapViewer extends JFrame {
         String centerStr = String.format("Center: (%d, %d)", (int) centerX, (int) centerZ);
         String seedStr = "Seed: " + seed;
         String cacheStr = String.format("Regions: %d cached", regionCache.size());
+        String gridStr = "Grid: " + (showGrid ? "ON" : "OFF");
 
         int x = pw - 160;
         int y = 20;
 
         // Background
         g.setColor(new Color(0, 0, 0, 150));
-        g.fillRoundRect(x - 10, y - 15, 165, 75, 8, 8);
+        g.fillRoundRect(x - 10, y - 15, 165, 90, 8, 8);
 
         g.setColor(new Color(255, 255, 255, 200));
         g.drawString(seedStr, x, y);
         g.drawString(centerStr, x, y + 15);
         g.drawString(zoomStr, x, y + 30);
         g.drawString(cacheStr, x, y + 45);
+        g.setColor(showGrid ? new Color(100, 255, 100, 200) : new Color(200, 200, 200));
+        g.drawString(gridStr, x, y + 60);
 
         // Controls hint
         g.setFont(new Font("SansSerif", Font.PLAIN, 10));
         g.setColor(new Color(180, 180, 180));
-        String hint = "Drag to pan | Scroll to zoom | Home to reset | C to clear cache";
+        String hint = "Drag to pan | Scroll to zoom | Home to reset | C clear cache | G toggle grid";
         g.drawString(hint, 10, ph - 40);
     }
 
