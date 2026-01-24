@@ -296,31 +296,17 @@ I want to start this project the right way so it can scale to a real Minecraft-l
 
 
 --- 
-## packages :
+## 2D Viewer Screenshot:
+To run 2D Viewer :
+```markdown
+    .\gradlew.bat runBiomeViewer
+```
+![screenshot_2d_viewer.png](screenshot_2d_viewer.png)
 
-renderer/src/main/java/org/aouessar/renderer/
-LwjglRendererV1.java
-RendererConfig.java
-
-renderer/src/main/java/org/aouessar/renderer/gl/
-GlShaderProgram.java
-GlTexture2D.java
-GlMesh.java
-
-renderer/src/main/java/org/aouessar/renderer/atlas/
-Atlas.java
-AtlasLoader.java
-
-renderer/src/main/java/org/aouessar/renderer/camera/
-Camera.java
-CameraController.java
-
-renderer/src/main/java/org/aouessar/renderer/mesh/
-ChunkMesher.java
-MeshData.java
-VertexWriter.java
-
-renderer/src/main/java/org/aouessar/renderer/world/
-ChunkMeshCache.java
-ChunkKey.java
-BlockRenderMap.java
+---
+## 3D LWJGL Screenshot:
+To run the 3D World :
+```markdown
+    .\gradlew.bat run
+```
+![screenshot_3d_lwjgl.png](screenshot_3d_lwjgl.png)
