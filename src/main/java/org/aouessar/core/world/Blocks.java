@@ -51,6 +51,8 @@ public final class Blocks {
     public static final short STRUCT_ACACIA_TREE    = 101;
     public static final short STRUCT_JUNGLE_TREE    = 102;
     public static final short STRUCT_MEGA_JUNGLE    = 103;
+    public static final short STRUCT_SPRUCE_TREE    = 104;
+    public static final short STRUCT_SNOW_TREE      = 105;
 
     /**
      * Get the render layer for the given block ID.

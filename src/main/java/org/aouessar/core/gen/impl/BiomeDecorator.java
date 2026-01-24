@@ -1,6 +1,9 @@
 package org.aouessar.core.gen.impl;
 
 import org.aouessar.core.gen.SurfaceDecorator;
+import org.aouessar.core.gen.config.BiomeConfig;
+import org.aouessar.core.gen.config.WorldContentConfig;
+import org.aouessar.core.gen.config.WorldContentLoader;
 import org.aouessar.core.math.GlobalTerrainUtils;
 import org.aouessar.core.noise.FastNoiseLite;
 import org.aouessar.core.world.Blocks;
@@ -11,6 +14,43 @@ import org.aouessar.core.world.layers.SurfaceRules;
 import org.aouessar.shared.EngineConfig;
 
 public final class BiomeDecorator implements SurfaceDecorator {
+
+    // Static palette data loaded once from JSON at class initialization
+    private static final short[] BIOME_TOP_BLOCKS = new short[16];
+    private static final short[] BIOME_FILLER_BLOCKS = new short[16];
+    private static final int[] BIOME_FILLER_DEPTHS = new int[16];
+
+    static {
+        // Set defaults first
+        for (int i = 0; i < 16; i++) {
+            BIOME_TOP_BLOCKS[i] = Blocks.GRASS;
+            BIOME_FILLER_BLOCKS[i] = Blocks.DIRT;
+            BIOME_FILLER_DEPTHS[i] = 4;
+        }
+
+        // Load from JSON config
+        try {
+            WorldContentConfig config = WorldContentLoader.load();
+            loadPalette(config, EngineConfig.BIOME_PLAINS, "PLAINS");
+            loadPalette(config, EngineConfig.BIOME_DESERT, "DESERT");
+            loadPalette(config, EngineConfig.BIOME_SNOW, "SNOW");
+            loadPalette(config, EngineConfig.BIOME_FOREST, "FOREST");
+            loadPalette(config, EngineConfig.BIOME_SAVANNA, "SAVANNA");
+            loadPalette(config, EngineConfig.BIOME_SWAMP, "SWAMP");
+            loadPalette(config, EngineConfig.BIOME_JUNGLE, "JUNGLE");
+        } catch (Exception e) {
+            System.err.println("Failed to load world content config, using defaults: " + e.getMessage());
+        }
+    }
+
+    private static void loadPalette(WorldContentConfig config, short biomeId, String biomeName) {
+        BiomeConfig bc = config.getBiome(biomeName);
+        if (bc != null) {
+            BIOME_TOP_BLOCKS[biomeId] = bc.topBlock();
+            BIOME_FILLER_BLOCKS[biomeId] = bc.fillerBlock();
+            BIOME_FILLER_DEPTHS[biomeId] = bc.fillerDepth();
+        }
+    }
 
     @Override
     public SurfaceRules generateSurfaceRules(Heightmap heightmap, BiomeMap biomeMap) {
@@ -119,41 +159,15 @@ public final class BiomeDecorator implements SurfaceDecorator {
     private record Palette(short top, short filler, int depth) {}
 
     private static Palette paletteFor(short biome, int heightY) {
-        // Desert: red sand + red sandstone foundation
-        if (biome == EngineConfig.BIOME_DESERT) {
-            return new Palette(Blocks.DESERT_SAND, Blocks.DESERT_SAND, 6);
-        }
-
-        // Savanna: dry grass
-        if (biome == EngineConfig.BIOME_SAVANNA) {
-            return new Palette(Blocks.DRY_GRASS, Blocks.DIRT, 4);
-        }
-
-        // Forest: regular green grass (like Minecraft oak/birch forests)
-        if (biome == EngineConfig.BIOME_FOREST) {
-            return new Palette(Blocks.GRASS, Blocks.DIRT, 4);
-        }
-
-        // Jungle: podzol gives that dense tropical floor debris look
-        if (biome == EngineConfig.BIOME_JUNGLE) {
-            return new Palette(Blocks.PODZOl_DIRT, Blocks.DIRT, 4);
-        }
-
-        // Swamp: regular grass (could add mud block if available)
-        if (biome == EngineConfig.BIOME_SWAMP) {
-            return new Palette(Blocks.GRASS, Blocks.DIRT, 5);
-        }
-
         // Snow: use SNOW_GRASS at moderate altitudes, SNOW at higher altitudes
         if (biome == EngineConfig.BIOME_SNOW) {
-            // altitude threshold: tweak if needed
             int aboveSea = heightY - EngineConfig.SEA_LEVEL;
-            short top = (aboveSea >= 28) ? Blocks.SNOW : Blocks.SNOW_GRASS;
-            return new Palette(top, Blocks.DIRT, 4);
+            short topBlock = (aboveSea >= 28) ? Blocks.SNOW : BIOME_TOP_BLOCKS[biome];
+            return new Palette(topBlock, BIOME_FILLER_BLOCKS[biome], BIOME_FILLER_DEPTHS[biome]);
         }
 
-        // Plains: default green grass
-        return new Palette(Blocks.GRASS, Blocks.DIRT, 4);
+        // All other biomes: use JSON-loaded data
+        return new Palette(BIOME_TOP_BLOCKS[biome], BIOME_FILLER_BLOCKS[biome], BIOME_FILLER_DEPTHS[biome]);
     }
 
     private static float dominanceBias(short biome) {

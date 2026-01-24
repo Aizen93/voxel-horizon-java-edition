@@ -105,10 +105,6 @@ public final class EngineConfig {
     // How much altitude cools temperature (0.0..1.0 range). Higher => more snow on mountains.
     public static final float BIOME_ALTITUDE_COOLING = 0.35f;
 
-    // Soft blending strength: higher => sharper borders, lower => wider transition zones.
-    // Typical range: 2..8
-    public static final float BIOME_BLEND_SHARPNESS = 4.0f;
-
     // Sea/shore blending: how many blocks above sea level count as “beach band”.
     public static final int BIOME_BEACH_BAND = 3;
 
@@ -121,26 +117,7 @@ public final class EngineConfig {
     public static final short BIOME_SWAMP  = 5;
     public static final short BIOME_JUNGLE = 6;
 
-
     public static final float BIOME_SIZE_SCALE = 0.50f; // 0.70 => ~30% smaller biomes
-    // Bigger climate zones (macro) = large biomes
-    public static final float BIOME_MACRO_FREQ_MULT = 0.12f / BIOME_SIZE_SCALE;  // macroFreq = baseFreq * this
-    public static final float BIOME_MACRO_MIX       = 0.80f;  // 0..1 (higher => bigger contiguous biomes)
-
-    // Make boundaries non-straight (wiggle thresholds)
-    public static final float BIOME_ZONE_SEL_FREQ   = (1.0f / 8192.0f) / BIOME_SIZE_SCALE;
-    public static final float BIOME_ZONE_WIGGLE     = 0.08f;  // threshold +- wiggle
-
-    // Climate thresholds (0..1)
-    public static final float BIOME_TEMP_COLD_MAX   = 0.30f;
-    public static final float BIOME_TEMP_HOT_MIN    = 0.72f;
-
-    public static final float BIOME_HUMID_DESERT_MAX  = 0.26f;
-    public static final float BIOME_HUMID_JUNGLE_MIN  = 0.74f;
-
-    public static final float BIOME_HUMID_FOREST_MIN  = 0.60f;
-    public static final float BIOME_HUMID_SWAMP_MIN   = 0.82f;
-
 
     // ===================== END BIOME TUNING =====================
 
@@ -166,13 +143,6 @@ public final class EngineConfig {
     public static final int RIVERBED_THICKNESS = 2;
 
     // ===============================================================================
-
-    public static final float BIOME_JUNGLE_TEMP_MIN  = 0.72f;
-    public static final float BIOME_JUNGLE_HUMID_MIN = 0.72f;
-    // Jungle patch selector (coherent blobs)
-    public static final float BIOME_JUNGLE_SELECTOR_FREQ = 1.0f / 768.0f;
-    // How much of "suitable" area becomes jungle (0..1)
-    public static final float BIOME_JUNGLE_COVERAGE = 0.65f;
 
     // --- Region layer halo (fixes region seam structure cuts) ---
     public static final int REGION_LAYER_PAD_CHUNKS = 1;

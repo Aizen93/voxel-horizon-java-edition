@@ -243,15 +243,27 @@ public final class ChunkBuilder {
         if (marker == Blocks.STRUCT_MEGA_JUNGLE) {
             if (!isSoil(groundTop)) return;
             int h = 15 + (GlobalTerrainUtils.hash8(wx, wz) % 9);
+            placeMegaJunglePartNormal(chunk, cx, cz, wx, wy, wz, h);
+            return;
+        }
+
+        if (marker == Blocks.STRUCT_SPRUCE_TREE) {
+            if (!isSoil(groundTop)) return;
+            int h = 8 + (GlobalTerrainUtils.hash8(wx, wz) % 6);
             placeSpruceTree(chunk, cx, cz, wx, wy, wz, h);
             return;
         }
 
-        // ----- Plants (single-block) -----
-        if (marker == Blocks.TALL_GRASS || marker == Blocks.DRY_WHEAT ||
-                marker == Blocks.FLOWER_RED || marker == Blocks.FLOWER_YELLOW || marker == Blocks.BUSH) {
+        if (marker == Blocks.STRUCT_SNOW_TREE) {
+            if (!isSoil(groundTop)) return;
+            int h = 6 + (GlobalTerrainUtils.hash8(wx, wz) % 4);
+            placeSnowTree(chunk, cx, cz, wx, wy, wz, h);
+            return;
+        }
 
-            if (!isGrassLike(groundTop)) return;
+        // ----- Plants (single-block) -----
+        if (isVegetation(marker)) {
+            if (!isGrassLike(groundTop) && !isSoil(groundTop)) return;
 
             // Place ONLY if that world position is inside THIS chunk
             setIfInThisChunkIfReplaceable(chunk, cx, cz, wx, wy, wz, marker);
@@ -353,12 +365,27 @@ public final class ChunkBuilder {
     private boolean isGrassLike(short id) {
         return id == Blocks.GRASS ||
                 id == Blocks.DRY_GRASS ||
-                id == Blocks.SNOW_GRASS;
+                id == Blocks.SNOW_GRASS ||
+                id == Blocks.SNOW;  // Allow vegetation on pure snow too
     }
 
     private boolean isSandLike(short id) {
         return id == Blocks.SAND ||
                 id == Blocks.DESERT_SAND;
+    }
+
+    private boolean isVegetation(short id) {
+        return id == Blocks.TALL_GRASS ||
+                id == Blocks.DRY_WHEAT ||
+                id == Blocks.FLOWER_RED ||
+                id == Blocks.FLOWER_YELLOW ||
+                id == Blocks.BUSH ||
+                id == Blocks.BERRY_BUSH ||
+                id == Blocks.FLOWER_CORNFLOWER ||
+                id == Blocks.FLOWER_HOUSTONIA ||
+                id == Blocks.FLOWER_OXEYE_DAISY ||
+                id == Blocks.FLOWER_RED_DOUBLE ||
+                id == Blocks.VINE;
     }
 
     /**
@@ -545,6 +572,34 @@ public final class ChunkBuilder {
             int dx = o[0];
             int dz = o[1];
             setLeavesIfAir(chunk, cx, cz, wxC + dx, wy, wzC + dz, leavesId);
+        }
+    }
+
+    /**
+     * Places a snow tree - similar to oak but with snow leaves.
+     */
+    private void placeSnowTree(Chunk chunk, int cx, int cz, int wxBase, int wyBase, int wzBase, int trunkH) {
+        // Trunk (using snow log)
+        for (int dy = 0; dy < trunkH; dy++) {
+            setIfInThisChunk(chunk, cx, cz, wxBase, wyBase + dy, wzBase, Blocks.SNOW_LOG);
+        }
+
+        // Leaves blob (similar to oak but with snow leaves)
+        int crownY = wyBase + trunkH - 1;
+        for (int dz = -2; dz <= 2; dz++) {
+            for (int dx = -2; dx <= 2; dx++) {
+                int dist2 = dx * dx + dz * dz;
+                if (dist2 > 6) continue;
+
+                // two layers of leaves
+                setLeavesIfAir(chunk, cx, cz, wxBase + dx, crownY,     wzBase + dz, Blocks.SNOW_LEAVES);
+                setLeavesIfAir(chunk, cx, cz, wxBase + dx, crownY + 1, wzBase + dz, Blocks.SNOW_LEAVES);
+
+                // top cap (smaller)
+                if (dist2 <= 2) {
+                    setLeavesIfAir(chunk, cx, cz, wxBase + dx, crownY + 2, wzBase + dz, Blocks.SNOW_LEAVES);
+                }
+            }
         }
     }
 }

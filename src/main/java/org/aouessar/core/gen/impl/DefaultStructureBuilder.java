@@ -1,8 +1,13 @@
 package org.aouessar.core.gen.impl;
 
 import org.aouessar.core.gen.StructureBuilder;
+import org.aouessar.core.gen.config.BiomeConfig;
+import org.aouessar.core.gen.config.TreeType;
+import org.aouessar.core.gen.config.TreesConfig;
+import org.aouessar.core.gen.config.VegetationConfig;
+import org.aouessar.core.gen.config.WorldContentConfig;
+import org.aouessar.core.gen.config.WorldContentLoader;
 import org.aouessar.core.math.GlobalTerrainUtils;
-import org.aouessar.core.world.Blocks;
 import org.aouessar.core.world.layers.BiomeMap;
 import org.aouessar.core.world.layers.Heightmap;
 import org.aouessar.core.world.layers.LayerRect;
@@ -14,12 +19,65 @@ import java.util.List;
 
 public final class DefaultStructureBuilder implements StructureBuilder {
 
-    // Dense defaults (tune later)
     private static final int TREES_TRIES_PER_CHUNK   = 6;
-    private static final int PLANTS_TRIES_PER_CHUNK  = 14; // tallgrass / drywheat
-    private static final int FLOWERS_TRIES_PER_CHUNK = 5;
-    private static final int BUSH_TRIES_PER_CHUNK    = 5;
-    private static final int CACTUS_TRIES_PER_CHUNK  = 4;
+    private static final int PLANTS_TRIES_PER_CHUNK  = 24;
+
+    // Static tree/vegetation data loaded from JSON at class initialization
+    private static final short[][] BIOME_TREE_MARKERS = new short[16][];
+    private static final int[] BIOME_TREE_DENSITY = new int[16];
+    private static final short[][] BIOME_VEG_TYPES = new short[16][];
+    private static final int[] BIOME_VEG_DENSITY = new int[16];
+
+    static {
+        // Set defaults (empty arrays)
+        for (int i = 0; i < 16; i++) {
+            BIOME_TREE_MARKERS[i] = new short[0];
+            BIOME_VEG_TYPES[i] = new short[0];
+        }
+
+        // Load from JSON config
+        try {
+            WorldContentConfig config = WorldContentLoader.load();
+            loadBiomeStructures(config, EngineConfig.BIOME_PLAINS, "PLAINS");
+            loadBiomeStructures(config, EngineConfig.BIOME_DESERT, "DESERT");
+            loadBiomeStructures(config, EngineConfig.BIOME_SNOW, "SNOW");
+            loadBiomeStructures(config, EngineConfig.BIOME_FOREST, "FOREST");
+            loadBiomeStructures(config, EngineConfig.BIOME_SAVANNA, "SAVANNA");
+            loadBiomeStructures(config, EngineConfig.BIOME_SWAMP, "SWAMP");
+            loadBiomeStructures(config, EngineConfig.BIOME_JUNGLE, "JUNGLE");
+        } catch (Exception e) {
+            System.err.println("Failed to load world content config for structures, using defaults: " + e.getMessage());
+        }
+    }
+
+    private static void loadBiomeStructures(WorldContentConfig config, short biomeId, String biomeName) {
+        BiomeConfig bc = config.getBiome(biomeName);
+        if (bc == null) return;
+
+        // Trees
+        TreesConfig tc = bc.structures().trees();
+        if (tc.hasTreePlacement()) {
+            List<TreeType> types = tc.types();
+            short[] markers = new short[types.size()];
+            for (int i = 0; i < types.size(); i++) {
+                markers[i] = types.get(i).getStructureMarkerId();
+            }
+            BIOME_TREE_MARKERS[biomeId] = markers;
+            BIOME_TREE_DENSITY[biomeId] = (int) (tc.density() * 255);
+        }
+
+        // Vegetation
+        VegetationConfig vc = bc.structures().vegetation();
+        if (vc.hasVegetation()) {
+            List<Short> types = vc.types();
+            short[] veg = new short[types.size()];
+            for (int i = 0; i < types.size(); i++) {
+                veg[i] = types.get(i);
+            }
+            BIOME_VEG_TYPES[biomeId] = veg;
+            BIOME_VEG_DENSITY[biomeId] = (int) (vc.density() * 255);
+        }
+    }
 
     @Override
     public StructureMap placeStructures(long seed, Heightmap heightmap, BiomeMap biomeMap) {
@@ -54,7 +112,7 @@ public final class DefaultStructureBuilder implements StructureBuilder {
                     placements.add(new StructureMap.Placement(wx, surfaceY + 1, wz, marker));
                 }
 
-                // ----- Plants (tall grass / dry wheat) -----
+                // ----- Vegetation (from JSON config) -----
                 for (int t = 0; t < PLANTS_TRIES_PER_CHUNK; t++) {
                     long h = GlobalTerrainUtils.hash(seed, cx, cz, 0x30_0000 + t);
 
@@ -67,100 +125,10 @@ public final class DefaultStructureBuilder implements StructureBuilder {
 
                     short biome = biomeMap.biomeIdAtUnchecked(wx, wz);
 
-                    // No plants in desert, and snow is optional (keep off for now)
-                    if (biome == EngineConfig.BIOME_DESERT || biome == EngineConfig.BIOME_SNOW) continue;
-
-                    int r = (int) ((h >>> 12) & 0xFF);
-
-                    short plant;
-                    switch (biome) {
-                        case EngineConfig.BIOME_SAVANNA -> {
-                            // dry grass => dry wheat instead of tall grass
-                            if (r > 235) continue;
-                            plant = Blocks.DRY_WHEAT;
-                        }
-                        case EngineConfig.BIOME_JUNGLE -> {
-                            // jungle very dense undergrowth
-                            if (r > 245) continue;
-                            plant = Blocks.TALL_GRASS;
-                        }
-                        default -> {
-                            // plains/forest/swamp
-                            if (r > 235) continue;
-                            plant = Blocks.TALL_GRASS;
-                        }
-                    }
+                    short plant = getVegetation(h, biome);
+                    if (plant == 0) continue;
 
                     placements.add(new StructureMap.Placement(wx, surfaceY + 1, wz, plant));
-                }
-
-                // ----- Flowers (mainly plains/forest) -----
-                for (int t = 0; t < FLOWERS_TRIES_PER_CHUNK; t++) {
-                    long h = GlobalTerrainUtils.hash(seed, cx, cz, 0x40_0000 + t);
-
-                    int wx = cx * EngineConfig.CHUNK_SIZE + (int) (h & 15);
-                    int wz = cz * EngineConfig.CHUNK_SIZE + (int) ((h >>> 4) & 15);
-                    if (!rect.contains(wx, wz)) continue;
-
-                    int surfaceY = heightmap.heightAt(wx, wz);
-                    if (surfaceY <= EngineConfig.SEA_LEVEL) continue;
-
-                    short biome = biomeMap.biomeIdAtUnchecked(wx, wz);
-                    if (biome != EngineConfig.BIOME_PLAINS && biome != EngineConfig.BIOME_FOREST) continue;
-
-                    int r = (int) ((h >>> 12) & 0xFF);
-                    if (r > 180) continue;
-
-                    short flower = (((h >>> 20) & 1) == 0) ? Blocks.FLOWER_RED : Blocks.FLOWER_YELLOW;
-
-                    placements.add(new StructureMap.Placement(wx, surfaceY + 1, wz, flower));
-                }
-
-                // ----- Bushes (swamp + jungle) -----
-                for (int t = 0; t < BUSH_TRIES_PER_CHUNK; t++) {
-                    long h = GlobalTerrainUtils.hash(seed, cx, cz, 0x50_0000 + t);
-
-                    int wx = cx * EngineConfig.CHUNK_SIZE + (int) (h & 15);
-                    int wz = cz * EngineConfig.CHUNK_SIZE + (int) ((h >>> 4) & 15);
-                    if (!rect.contains(wx, wz)) continue;
-
-                    int surfaceY = heightmap.heightAt(wx, wz);
-                    if (surfaceY <= EngineConfig.SEA_LEVEL) continue;
-
-                    short biome = biomeMap.biomeIdAtUnchecked(wx, wz);
-                    int r = (int) ((h >>> 12) & 0xFF);
-
-                    boolean allow =
-                            (biome == EngineConfig.BIOME_SWAMP  && r < 240) ||
-                                    (biome == EngineConfig.BIOME_JUNGLE && r < 200);
-
-                    if (!allow) continue;
-
-                    placements.add(new StructureMap.Placement(
-                            wx, surfaceY + 1, wz, Blocks.BUSH
-                    ));
-                }
-
-                // ----- Cactus (desert) -----
-                for (int t = 0; t < CACTUS_TRIES_PER_CHUNK; t++) {
-                    long h = GlobalTerrainUtils.hash(seed, cx, cz, 0x20_0000 + t);
-
-                    int wx = cx * EngineConfig.CHUNK_SIZE + (int) (h & 15);
-                    int wz = cz * EngineConfig.CHUNK_SIZE + (int) ((h >>> 4) & 15);
-                    if (!rect.contains(wx, wz)) continue;
-
-                    int surfaceY = heightmap.heightAt(wx, wz);
-                    if (surfaceY <= EngineConfig.SEA_LEVEL - 1) continue;
-
-                    short biome = biomeMap.biomeIdAtUnchecked(wx, wz);
-                    if (biome != EngineConfig.BIOME_DESERT) continue;
-
-                    int r = (int) ((h >>> 12) & 0xFF);
-                    if (r > 20) continue;
-
-                    placements.add(new StructureMap.Placement(
-                            wx, surfaceY + 1, wz, Blocks.CACTUS
-                    ));
                 }
             }
         }
@@ -169,35 +137,26 @@ public final class DefaultStructureBuilder implements StructureBuilder {
     }
 
     private static short getMarker(long h, short biome) {
+        short[] markers = BIOME_TREE_MARKERS[biome];
+        if (markers.length == 0) return 0;
+
         int r = (int) ((h >>> 12) & 0xFF);
+        if (r > BIOME_TREE_DENSITY[biome]) return 0;
 
-        // Choose tree marker by biome
-        short marker = 0;
+        // Select tree type (support multiple types per biome)
+        int idx = (int) ((h >>> 20) % markers.length);
+        return markers[idx];
+    }
 
-        switch (biome) {
-            case EngineConfig.BIOME_FOREST -> {
-                if (r < 235) marker = Blocks.STRUCT_OAK_TREE; // very dense oak
-            }
-            case EngineConfig.BIOME_PLAINS -> {
-                if (r < 90) marker = Blocks.STRUCT_OAK_TREE;  // some oak
-            }
-            case EngineConfig.BIOME_SAVANNA -> {
-                if (r < 140) marker = Blocks.STRUCT_ACACIA_TREE; // dense acacia
-            }
-            case EngineConfig.BIOME_JUNGLE -> {
-                // Jungle: lots of jungle trees + rare mega
-                if (r < 220) marker = Blocks.STRUCT_JUNGLE_TREE;
-                // mega jungle very rare
-                int r2 = (int) ((h >>> 20) & 0xFF);
-                if (r2 < 12) marker = Blocks.STRUCT_MEGA_JUNGLE;
-            }
-            case EngineConfig.BIOME_SWAMP -> {
-                if (r < 80) marker = Blocks.STRUCT_OAK_TREE; // some trees
-            }
-            default -> {
-                // snow/desert: no trees for now
-            }
-        }
-        return marker;
+    private static short getVegetation(long h, short biome) {
+        short[] types = BIOME_VEG_TYPES[biome];
+        if (types.length == 0) return 0;
+
+        int r = (int) ((h >>> 12) & 0xFF);
+        if (r > BIOME_VEG_DENSITY[biome]) return 0;
+
+        // Select vegetation type from JSON config
+        int idx = (int) ((h >>> 20) % types.length);
+        return types[idx];
     }
 }
