@@ -65,6 +65,24 @@ public final class ChunkBuilder {
                     depth = Math.max(depth, 6);
                 }
 
+                // Swamp: mix of grass, clay, and gravel patches at low elevation
+                boolean isSwamp = (biome == EngineConfig.BIOME_SWAMP);
+                if (isSwamp && !isBeach) {
+                    int swampHash = GlobalTerrainUtils.hash8(wx + 12345, wz + 67890);
+                    if (swampHash < 80) {
+                        // ~31% clay patches
+                        top = Blocks.CLAY;
+                        filler = Blocks.CLAY;
+                        depth = Math.max(depth, 3);
+                    } else if (swampHash < 120) {
+                        // ~16% gravel patches
+                        top = Blocks.GRAVEL;
+                        filler = Blocks.DIRT;
+                        depth = Math.max(depth, 3);
+                    }
+                    // else keep default grass/dirt from surface rules
+                }
+
                 // Underwater seabed: sand/gravel/clay mix
                 boolean underwater = hasWater && surfaceY < waterLevel;
                 if (underwater) {
@@ -603,3 +621,4 @@ public final class ChunkBuilder {
         }
     }
 }
+

@@ -93,20 +93,34 @@ public final class EngineConfig {
 
     // ======================= BIOME TUNING =======================
 
-    // Climate noise frequencies (smaller freq => larger biomes)
-    public static final float BIOME_TEMP_FREQ   = 1.0f / 4096.0f;
-    public static final float BIOME_HUMID_FREQ  = 1.0f / 4096.0f;
-    public static final float BIOME_WEIRD_FREQ  = 1.0f / 2048.0f;
+    // Biome size scale - higher = larger biomes (1.0 = base, 2.0 = double size)
+    public static final float BIOME_SIZE_SCALE = 2.0f;
 
-    // Domain warp to make biome borders less “noise-field-y”
-    public static final float BIOME_WARP_FREQ       = 1.0f / 3072.0f;
-    public static final float BIOME_WARP_AMP_BLOCKS = 220.0f;
+    // Climate grid cell size in blocks (scaled by BIOME_SIZE_SCALE)
+    public static final float BIOME_GRID_CELL_SIZE = 512.0f;
+
+    // Climate noise frequencies (smaller freq => larger biomes) - scaled by BIOME_SIZE_SCALE
+    public static final float BIOME_TEMP_FREQ   = 1.0f / (8192.0f * BIOME_SIZE_SCALE);
+    public static final float BIOME_HUMID_FREQ  = 1.0f / (8192.0f * BIOME_SIZE_SCALE);
+    public static final float BIOME_WEIRD_FREQ  = 1.0f / (4096.0f * BIOME_SIZE_SCALE);
+
+    // Continentalness frequency for climate gradients (latitudinal feel)
+    public static final float BIOME_CONTINENTAL_FREQ = 1.0f / (16384.0f * BIOME_SIZE_SCALE);
+
+    // Domain warp to make biome borders organic (not straight lines)
+    public static final float BIOME_WARP_FREQ       = 1.0f / (4096.0f * BIOME_SIZE_SCALE);
+    public static final float BIOME_WARP_AMP_BLOCKS = 300.0f * BIOME_SIZE_SCALE;
 
     // How much altitude cools temperature (0.0..1.0 range). Higher => more snow on mountains.
-    public static final float BIOME_ALTITUDE_COOLING = 0.35f;
+    public static final float BIOME_ALTITUDE_COOLING = 0.40f;
 
-    // Sea/shore blending: how many blocks above sea level count as “beach band”.
+    // Sea/shore blending: how many blocks above sea level count as "beach band".
     public static final int BIOME_BEACH_BAND = 3;
+
+    // Swamp generation thresholds
+    public static final int SWAMP_MAX_ELEVATION_ABOVE_SEA = 12;  // Swamps only at low elevations
+    public static final float SWAMP_MIN_HUMIDITY = 0.55f;         // Swamps require high humidity
+    public static final float SWAMP_NOISE_FREQ = 1.0f / (2048.0f * BIOME_SIZE_SCALE);
 
     // Biome IDs (keep or change as you like, but generator/decorator should match)
     public static final short BIOME_PLAINS = 0;
@@ -117,7 +131,16 @@ public final class EngineConfig {
     public static final short BIOME_SWAMP  = 5;
     public static final short BIOME_JUNGLE = 6;
 
-    public static final float BIOME_SIZE_SCALE = 0.50f; // 0.70 => ~30% smaller biomes
+    // Climate temperature zones (0.0 = coldest, 1.0 = hottest)
+    public static final float CLIMATE_COLD_MAX = 0.25f;     // Snow biome threshold
+    public static final float CLIMATE_COOL_MAX = 0.42f;     // Plains/Forest threshold
+    public static final float CLIMATE_WARM_MAX = 0.58f;     // Savanna threshold (lowered to give more hot biome area)
+    // Above CLIMATE_WARM_MAX = hot (Desert/Jungle)
+
+    // Humidity thresholds (0.0 = driest, 1.0 = wettest)
+    public static final float CLIMATE_DRY_MAX = 0.38f;      // Desert/Savanna/Plains(dry)
+    public static final float CLIMATE_MODERATE_MAX = 0.58f; // Plains/Forest (lowered to give more wet biome area)
+    // Above CLIMATE_MODERATE_MAX = wet (Forest/Jungle/Swamp)
 
     // ===================== END BIOME TUNING =====================
 
