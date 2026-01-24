@@ -156,7 +156,7 @@ public final class DefaultStructureBuilder implements StructureBuilder {
                     if (biome != EngineConfig.BIOME_DESERT) continue;
 
                     int r = (int) ((h >>> 12) & 0xFF);
-                    if (r > 150) continue;
+                    if (r > 20) continue;
 
                     placements.add(new StructureMap.Placement(
                             wx, surfaceY + 1, wz, Blocks.CACTUS

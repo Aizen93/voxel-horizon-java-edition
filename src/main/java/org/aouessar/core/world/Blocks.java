@@ -40,6 +40,11 @@ public final class Blocks {
     public static final short SPRUCE_LEAVES         = 34;
     public static final short SPRUCE_LOG            = 35;
     public static final short BERRY_BUSH            = 36;
+    public static final short FLOWER_CORNFLOWER     = 37;
+    public static final short FLOWER_HOUSTONIA      = 38;
+    public static final short FLOWER_OXEYE_DAISY    = 39;
+    public static final short FLOWER_RED_DOUBLE     = 40;
+    public static final short VINE                  = 41;
 
     // "structure marker ids" : placements can use these ids to request multi-block placement
     public static final short STRUCT_OAK_TREE       = 100;
@@ -60,7 +65,7 @@ public final class Blocks {
             case WATER, GLASS -> RenderLayer.TRANSLUCENT;
 
             case LEAVES, OAK_LEAVES, BUSH, TALL_GRASS, FLOWER_RED, SNOW_LEAVES,
-                 FLOWER_YELLOW, DRY_WHEAT, JUNGLE_LEAVES, ACACIA_LEAVES
+                 FLOWER_YELLOW, DRY_WHEAT, JUNGLE_LEAVES, ACACIA_LEAVES, SPRUCE_LEAVES
                     -> RenderLayer.CUTOUT;
 
             default -> RenderLayer.OPAQUE;
@@ -74,12 +79,17 @@ public final class Blocks {
      */
     public static boolean isBillboard(short blockId) {
         return switch (blockId) {
-            case Blocks.BUSH,
-                 Blocks.TALL_GRASS,
-                 Blocks.FLOWER_YELLOW,
-                 Blocks.FLOWER_RED,
-                 Blocks.DRY_WHEAT,
-                 Blocks.BERRY_BUSH
+            case BUSH,
+                 TALL_GRASS,
+                 FLOWER_YELLOW,
+                 FLOWER_RED,
+                 DRY_WHEAT,
+                 BERRY_BUSH,
+                 FLOWER_CORNFLOWER,
+                 FLOWER_HOUSTONIA,
+                 FLOWER_OXEYE_DAISY,
+                 FLOWER_RED_DOUBLE,
+                 VINE
                     -> true;
             default -> false;
         };

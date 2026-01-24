@@ -129,10 +129,19 @@ public final class BiomeDecorator implements SurfaceDecorator {
             return new Palette(Blocks.DRY_GRASS, Blocks.DIRT, 4);
         }
 
-        // Forest: podzol gives that “forest floor” look
-        // (If you want some forests to still be green, we can patch-mix podzol later.)
+        // Forest: regular green grass (like Minecraft oak/birch forests)
         if (biome == EngineConfig.BIOME_FOREST) {
+            return new Palette(Blocks.GRASS, Blocks.DIRT, 4);
+        }
+
+        // Jungle: podzol gives that dense tropical floor debris look
+        if (biome == EngineConfig.BIOME_JUNGLE) {
             return new Palette(Blocks.PODZOl_DIRT, Blocks.DIRT, 4);
+        }
+
+        // Swamp: regular grass (could add mud block if available)
+        if (biome == EngineConfig.BIOME_SWAMP) {
+            return new Palette(Blocks.GRASS, Blocks.DIRT, 5);
         }
 
         // Snow: use SNOW_GRASS at moderate altitudes, SNOW at higher altitudes
@@ -143,7 +152,7 @@ public final class BiomeDecorator implements SurfaceDecorator {
             return new Palette(top, Blocks.DIRT, 4);
         }
 
-        // Swamp / plains: default grassA
+        // Plains: default green grass
         return new Palette(Blocks.GRASS, Blocks.DIRT, 4);
     }
 
