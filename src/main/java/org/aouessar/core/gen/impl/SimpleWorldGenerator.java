@@ -188,15 +188,59 @@ public final class SimpleWorldGenerator implements WorldGenerator {
 
                 mountains += megaPeaks;
 
-                // -------------------- Oceans --------------------
+                // -------------------- Oceans with varied depth --------------------
 
+                // offshore: 0 = land, 1 = deep ocean
                 float offshore = 1.0f - land;
-                float oceanDepth = offshore * (EngineConfig.TERRAIN_OCEAN_BASE_DEPTH + offshore * EngineConfig.TERRAIN_OCEAN_EXTRA_DEPTH);
-                oceanDepth += offshore * (d * EngineConfig.TERRAIN_SEABED_VARIATION);
 
-                float oceanHeight = sea - oceanDepth + (L * EngineConfig.TERRAIN_OCEAN_LARGE_VARIATION);
-                float landHeight  = sea + uplift + rolling + hills + mountains;
+                // Create a very gradual depth gradient from coast to deep ocean
+                // Use cubic curve (offshore^3) for much slower initial descent - stays shallow longer
+                float shallowGradient = offshore * offshore;  // Quadratic for initial shallow zone
+                float deepGradient = offshore * offshore * offshore;  // Cubic for deep ocean transition
 
+                // Shallow coastal zone - very gradual slope near shore
+                // Only reaches ~12 blocks deep even at offshore=0.5
+                float shallowDepth = EngineConfig.TERRAIN_OCEAN_BASE_DEPTH * shallowGradient;
+
+                // Deep ocean depth - only kicks in significantly when offshore > 0.6
+                // Uses cubic curve so it stays shallow much longer
+                float deepTransition = GlobalTerrainUtils.smoothstep(0.5f, 0.85f, offshore);
+                float deepDepth = EngineConfig.TERRAIN_OCEAN_EXTRA_DEPTH * deepTransition * deepGradient;
+
+                // Deep ocean floor variation - only in truly deep areas (offshore > 0.75)
+                float deepOceanFactor = GlobalTerrainUtils.smoothstep(0.75f, 0.95f, offshore);
+                float deepFloorVariation = deepOceanFactor * EngineConfig.TERRAIN_DEEP_OCEAN_EXTRA_DEPTH
+                        * (0.5f + 0.5f * L); // Use large noise for underwater hills/valleys
+
+                // Rare ocean trenches only in the deepest areas (offshore > 0.85)
+                float trenchNoise = GlobalTerrainUtils.clamp01((r + 1.0f) * 0.5f); // Reuse ridge noise
+                float trenchFactor = GlobalTerrainUtils.smoothstep(0.85f, 0.98f, offshore)
+                        * GlobalTerrainUtils.smoothstep(0.7f, 0.95f, trenchNoise);
+                float trenchDepth = trenchFactor * EngineConfig.TERRAIN_OCEAN_TRENCH_DEPTH;
+
+                // Seabed detail variation (underwater terrain texture) - reduced near shore
+                float seabedDetail = shallowGradient * d * EngineConfig.TERRAIN_SEABED_VARIATION;
+
+                // Large-scale underwater terrain variation - also reduced near shore
+                float underwaterLarge = shallowGradient * L * EngineConfig.TERRAIN_OCEAN_LARGE_VARIATION;
+
+                // Combine all ocean depth components
+                float totalOceanDepth = shallowDepth + deepDepth + deepFloorVariation + trenchDepth + seabedDetail;
+
+                // Ocean floor height (lower = deeper)
+                float oceanHeight = sea - totalOceanDepth + underwaterLarge;
+
+                // Ensure deep ocean has minimum depth only when truly far offshore
+                if (offshore > 0.8f) {
+                    float minDeepHeight = sea - EngineConfig.TERRAIN_DEEP_OCEAN_MIN_DEPTH;
+                    float enforceAmount = GlobalTerrainUtils.smoothstep(0.8f, 0.95f, offshore);
+                    float targetHeight = minDeepHeight + underwaterLarge * 0.3f;
+                    oceanHeight = org.joml.Math.lerp(oceanHeight, Math.min(oceanHeight, targetHeight), enforceAmount);
+                }
+
+                float landHeight = sea + uplift + rolling + hills + mountains;
+
+                // Smooth transition between land and ocean
                 float shoreBlend = GlobalTerrainUtils.smoothstep(0.35f, 0.65f, land);
                 float height = org.joml.Math.lerp(oceanHeight, landHeight, shoreBlend);
 

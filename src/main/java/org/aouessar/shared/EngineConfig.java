@@ -57,10 +57,16 @@ public final class EngineConfig {
     public static final float TERRAIN_MOUNTAIN_AMPLITUDE = 110.0f;
 
     // Ocean depth (blocks)
-    public static final float TERRAIN_OCEAN_BASE_DEPTH  = 18.0f;
-    public static final float TERRAIN_OCEAN_EXTRA_DEPTH = 36.0f;
-    public static final float TERRAIN_SEABED_VARIATION  = 6.0f;
-    public static final float TERRAIN_OCEAN_LARGE_VARIATION = 8.0f;
+    // The ocean floor uses gradual curves, so these values are maximum contributions
+    public static final float TERRAIN_OCEAN_BASE_DEPTH  = 8.0f;   // was 12.0f - very shallow near coast
+    public static final float TERRAIN_OCEAN_EXTRA_DEPTH = 45.0f;  // was 50.0f - deep ocean contribution
+    public static final float TERRAIN_SEABED_VARIATION  = 6.0f;   // was 8.0f - subtle variation
+    public static final float TERRAIN_OCEAN_LARGE_VARIATION = 8.0f; // was 12.0f - less chaotic near shore
+
+    // Deep ocean underwater terrain (only applies far from shore)
+    public static final float TERRAIN_DEEP_OCEAN_MIN_DEPTH = 45.0f;  // was 35.0f - deeper minimum for true deep ocean
+    public static final float TERRAIN_DEEP_OCEAN_EXTRA_DEPTH = 35.0f; // was 40.0f - variation in deep areas
+    public static final float TERRAIN_OCEAN_TRENCH_DEPTH = 30.0f;  // was 25.0f - deeper trenches
 
     // Mountains shaping
     public static final float TERRAIN_RIDGE_MIN = 0.15f;
@@ -98,9 +104,6 @@ public final class EngineConfig {
     // Biome size scale - higher = larger biomes (1.0 = base, 2.0 = double size)
     public static final float BIOME_SIZE_SCALE = 2.0f;
 
-    // Climate grid cell size in blocks (scaled by BIOME_SIZE_SCALE)
-    public static final float BIOME_GRID_CELL_SIZE = 512.0f;
-
     // Climate noise frequencies (smaller freq => larger biomes) - scaled by BIOME_SIZE_SCALE
     public static final float BIOME_TEMP_FREQ   = 1.0f / (8192.0f * BIOME_SIZE_SCALE);
     public static final float BIOME_HUMID_FREQ  = 1.0f / (8192.0f * BIOME_SIZE_SCALE);
@@ -115,9 +118,6 @@ public final class EngineConfig {
 
     // How much altitude cools temperature (0.0..1.0 range). Higher => more snow on mountains.
     public static final float BIOME_ALTITUDE_COOLING = 0.40f;
-
-    // Sea/shore blending: how many blocks above sea level count as "beach band".
-    public static final int BIOME_BEACH_BAND = 3;
 
     // Swamp generation thresholds
     public static final int SWAMP_MAX_ELEVATION_ABOVE_SEA = 12;  // Swamps only at low elevations
@@ -139,7 +139,7 @@ public final class EngineConfig {
     public static final short BIOME_DEEP_OCEAN = 8;
 
     // Ocean depth thresholds
-    public static final int DEEP_OCEAN_DEPTH = 20;   // Blocks below sea level for deep ocean
+    public static final int DEEP_OCEAN_DEPTH = 40;   // was 20 - Deep ocean starts much further from shore
 
     // Swamp generation - inland low-lying areas only
     public static final int SWAMP_MIN_DISTANCE_FROM_OCEAN = 16; // Blocks inland from coastline
