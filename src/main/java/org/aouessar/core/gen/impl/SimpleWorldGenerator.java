@@ -82,6 +82,15 @@ public final class SimpleWorldGenerator implements WorldGenerator {
         peaks.SetFractalGain(0.5f);
         peaks.SetFractalLacunarity(2.0f);
 
+        // Rare deep ocean islands (volcanic islands like Maldives, Bora Bora)
+        FastNoiseLite oceanIslands = new FastNoiseLite(GlobalTerrainUtils.mixSeed(seed, 0x77777777));
+        oceanIslands.SetNoiseType(FastNoiseLite.NoiseType.OpenSimplex2);
+        oceanIslands.SetFrequency(EngineConfig.TERRAIN_OCEAN_ISLAND_FREQ);
+        oceanIslands.SetFractalType(FastNoiseLite.FractalType.FBm);
+        oceanIslands.SetFractalOctaves(3);
+        oceanIslands.SetFractalGain(0.5f);
+        oceanIslands.SetFractalLacunarity(2.0f);
+
         final int sea = EngineConfig.SEA_LEVEL;
 
         int i = 0;
@@ -236,6 +245,37 @@ public final class SimpleWorldGenerator implements WorldGenerator {
                     float enforceAmount = GlobalTerrainUtils.smoothstep(0.8f, 0.95f, offshore);
                     float targetHeight = minDeepHeight + underwaterLarge * 0.3f;
                     oceanHeight = org.joml.Math.lerp(oceanHeight, Math.min(oceanHeight, targetHeight), enforceAmount);
+                }
+
+                // -------------------- Rare Deep Ocean Islands (volcanic) --------------------
+                // Only spawn in truly deep ocean areas, FAR from any land (offshore > 0.92)
+                // These are like Maldives, Bora Bora - rare volcanic islands rising from deep ocean
+                if (offshore > 0.92f) {
+                    float islandNoise = (oceanIslands.GetNoise(wx, wz) + 1.0f) * 0.5f; // 0..1
+
+                    // Only create islands where noise exceeds threshold (very rare)
+                    if (islandNoise > EngineConfig.TERRAIN_OCEAN_ISLAND_THRESHOLD) {
+                        // How much above threshold determines island intensity
+                        float islandIntensity = (islandNoise - EngineConfig.TERRAIN_OCEAN_ISLAND_THRESHOLD)
+                                / (1.0f - EngineConfig.TERRAIN_OCEAN_ISLAND_THRESHOLD);
+
+                        // Sharp peak shape - small islands with distinct peaks
+                        islandIntensity = (float) Math.pow(islandIntensity, EngineConfig.TERRAIN_OCEAN_ISLAND_POWER);
+
+                        // Full island effect only in the deepest ocean
+                        float deepOceanMask = GlobalTerrainUtils.smoothstep(0.92f, 0.98f, offshore);
+                        islandIntensity *= deepOceanMask;
+
+                        // Island rises from ocean floor to above sea level
+                        float islandRise = islandIntensity * (EngineConfig.TERRAIN_OCEAN_ISLAND_BASE + EngineConfig.TERRAIN_OCEAN_ISLAND_HEIGHT);
+
+                        // Add some variation to island height using detail noise
+                        float islandVariation = 1.0f + d * 0.2f;
+                        islandRise *= islandVariation;
+
+                        // Raise the ocean floor (or create land above sea level)
+                        oceanHeight += islandRise;
+                    }
                 }
 
                 float landHeight = sea + uplift + rolling + hills + mountains;

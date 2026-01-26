@@ -75,19 +75,10 @@ public class BiomeMapViewer extends JFrame {
     private static final Color WATER_COLOR = new Color(30, 60, 180);
     private static final Color LOADING_COLOR = new Color(60, 60, 60);
     private static final Color BEACH_COLOR = new Color(250, 222, 85);  // Sandy yellow
-    private static final Color OCEAN_COLOR = new Color(30, 100, 200);  // Lighter blue for shallow ocean
-    private static final Color DEEP_OCEAN_COLOR = new Color(20, 50, 150);  // Darker blue for deep ocean
     private static final String BEACH_NAME = "Beach";
-    private static final String OCEAN_NAME = "Ocean";
-    private static final String DEEP_OCEAN_NAME = "Deep Ocean";
 
-    // Special biome ID for display only (not real biomes)
+    // Special biome ID for display only (beach is terrain, not a real biome)
     private static final short DISPLAY_BEACH = 100;
-    private static final short DISPLAY_OCEAN = 101;
-    private static final short DISPLAY_DEEP_OCEAN = 102;
-
-    // Threshold for deep ocean (blocks below sea level)
-    private static final int DEEP_OCEAN_THRESHOLD = 15;
 
     static {
         // Initialize biome colors and names
@@ -99,6 +90,10 @@ public class BiomeMapViewer extends JFrame {
         BIOME_COLORS[EngineConfig.BIOME_SWAMP] = new Color(47, 112, 91);      // Murky green
         BIOME_COLORS[EngineConfig.BIOME_JUNGLE] = new Color(99, 55, 47);      // Brown
 
+        // Ocean biomes (geographic biomes)
+        BIOME_COLORS[EngineConfig.BIOME_OCEAN] = new Color(50, 120, 200);     // Lighter blue for ocean
+        BIOME_COLORS[EngineConfig.BIOME_DEEP_OCEAN] = new Color(20, 50, 150); // Darker blue for deep ocean
+
         BIOME_NAMES[EngineConfig.BIOME_PLAINS] = "Plains";
         BIOME_NAMES[EngineConfig.BIOME_DESERT] = "Desert";
         BIOME_NAMES[EngineConfig.BIOME_SNOW] = "Snow";
@@ -106,6 +101,8 @@ public class BiomeMapViewer extends JFrame {
         BIOME_NAMES[EngineConfig.BIOME_SAVANNA] = "Savanna";
         BIOME_NAMES[EngineConfig.BIOME_SWAMP] = "Swamp";
         BIOME_NAMES[EngineConfig.BIOME_JUNGLE] = "Jungle";
+        BIOME_NAMES[EngineConfig.BIOME_OCEAN] = "Ocean";
+        BIOME_NAMES[EngineConfig.BIOME_DEEP_OCEAN] = "Deep Ocean";
 
         // Fill remaining with defaults
         for (int i = 0; i < BIOME_COLORS.length; i++) {
@@ -274,8 +271,10 @@ public class BiomeMapViewer extends JFrame {
 
         // Add special terrain types to the legend
         addLegendItem(panel, BEACH_COLOR, BEACH_NAME);
-        addLegendItem(panel, OCEAN_COLOR, OCEAN_NAME);
-        addLegendItem(panel, DEEP_OCEAN_COLOR, DEEP_OCEAN_NAME);
+
+        // Add ocean biomes
+        addLegendItem(panel, BIOME_COLORS[EngineConfig.BIOME_OCEAN], BIOME_NAMES[EngineConfig.BIOME_OCEAN]);
+        addLegendItem(panel, BIOME_COLORS[EngineConfig.BIOME_DEEP_OCEAN], BIOME_NAMES[EngineConfig.BIOME_DEEP_OCEAN]);
 
         return panel;
     }
@@ -311,18 +310,12 @@ public class BiomeMapViewer extends JFrame {
 
         int seaLevel = EngineConfig.SEA_LEVEL;
 
-        // Check if this is ocean (below sea level)
-        if (hoverHeight < seaLevel) {
-            int depth = seaLevel - hoverHeight;
-            if (depth >= DEEP_OCEAN_THRESHOLD) {
-                hoverBiomeId = DISPLAY_DEEP_OCEAN;
-            } else {
-                hoverBiomeId = DISPLAY_OCEAN;
-            }
-            return;  // Ocean overrides all other biome detection
+        // If it's an ocean biome, don't check for beach
+        if (hoverBiomeId == EngineConfig.BIOME_OCEAN || hoverBiomeId == EngineConfig.BIOME_DEEP_OCEAN) {
+            return;  // Use the actual biome ID
         }
 
-        // Check if this is a beach area - EXACT same logic as ChunkBuilder.java
+        // Check if this is a beach area (terrain feature, not biome) - EXACT same logic as ChunkBuilder.java
         int beachBand = EngineConfig.BEACH_BAND;
         boolean isBeach = Math.abs(hoverHeight - seaLevel) <= beachBand &&
                           hoverHeight >= seaLevel - 2 && hoverHeight <= seaLevel + 6;
@@ -545,15 +538,18 @@ public class BiomeMapViewer extends JFrame {
                 int h = heightmap.heightAt(worldX, worldZ);
 
                 int rgb;
-                if (h < seaLevel) {
-                    // Water - use depth-based blue
-                    int depth = seaLevel - h;
-                    int blue = Math.max(80, 200 - depth * 3);
-                    int green = Math.max(40, 100 - depth * 2);
-                    rgb = (30 << 16) | (green << 8) | blue;
+
+                // Ocean biomes - use smooth depth-based color transition (like before)
+                if (biomeId == EngineConfig.BIOME_OCEAN || biomeId == EngineConfig.BIOME_DEEP_OCEAN) {
+                    // Smooth depth-based color gradient from light blue (shallow) to dark blue (deep)
+                    int depth = Math.max(0, seaLevel - h);
+                    // Gradually transition color based on depth
+                    int blue = Math.max(80, 200 - depth * 2);
+                    int green = Math.max(40, 120 - depth * 2);
+                    int red = Math.max(15, 50 - depth);
+                    rgb = (red << 16) | (green << 8) | blue;
                 } else {
-                    // Check for beach - EXACT same logic as ChunkBuilder.java
-                    // ChunkBuilder: Math.abs(surfaceY - sea) <= BEACH_BAND && surfaceY >= sea - 2 && surfaceY <= sea + 6
+                    // Land biomes - check for beach terrain feature
                     boolean isBeach = Math.abs(h - seaLevel) <= beachBand && h >= seaLevel - 2 && h <= seaLevel + 6;
                     boolean canBeBeach = biomeId != EngineConfig.BIOME_SNOW &&
                                          biomeId != EngineConfig.BIOME_DESERT;
@@ -658,12 +654,6 @@ public class BiomeMapViewer extends JFrame {
         if (hoverBiomeId == DISPLAY_BEACH) {
             biomeName = BEACH_NAME;
             biomeColor = BEACH_COLOR;
-        } else if (hoverBiomeId == DISPLAY_OCEAN) {
-            biomeName = OCEAN_NAME;
-            biomeColor = OCEAN_COLOR;
-        } else if (hoverBiomeId == DISPLAY_DEEP_OCEAN) {
-            biomeName = DEEP_OCEAN_NAME;
-            biomeColor = DEEP_OCEAN_COLOR;
         } else if (hoverBiomeId >= 0 && hoverBiomeId < BIOME_NAMES.length) {
             biomeName = BIOME_NAMES[hoverBiomeId];
             biomeColor = BIOME_COLORS[hoverBiomeId];

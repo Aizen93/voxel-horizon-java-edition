@@ -68,6 +68,19 @@ public final class EngineConfig {
     public static final float TERRAIN_DEEP_OCEAN_EXTRA_DEPTH = 35.0f; // was 40.0f - variation in deep areas
     public static final float TERRAIN_OCEAN_TRENCH_DEPTH = 30.0f;  // was 25.0f - deeper trenches
 
+    // Rare deep ocean islands (volcanic islands like Maldives, Bora Bora)
+    public static final float TERRAIN_OCEAN_ISLAND_FREQ = 1.0f / 4096.0f;  // Frequency of island noise
+    public static final float TERRAIN_OCEAN_ISLAND_THRESHOLD = 0.92f;  // Higher = rarer islands (0.92 = very rare)
+    public static final float TERRAIN_OCEAN_ISLAND_HEIGHT = 25.0f;  // Max height above sea level
+    public static final float TERRAIN_OCEAN_ISLAND_BASE = 80.0f;  // How much it rises from ocean floor
+    public static final float TERRAIN_OCEAN_ISLAND_POWER = 4.0f;  // Sharpness of island peaks
+
+    // Mountain terrain decoration thresholds (elevation above sea level)
+    // Mountain decoration applies at high elevations based on steepness
+    public static final int MOUNTAIN_MIN_ELEVATION = 70;    // Minimum elevation for mountain terrain rules
+    public static final int MOUNTAIN_SNOW_LINE = 85;        // Above this, flat areas get snow
+    public static final int MOUNTAIN_HIGH_ALPINE = 120;     // Very high altitude - more exposed rock
+
     // Mountains shaping
     public static final float TERRAIN_RIDGE_MIN = 0.15f;
     public static final float TERRAIN_RIDGE_MAX = 0.65f;

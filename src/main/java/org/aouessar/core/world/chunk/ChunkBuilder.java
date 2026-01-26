@@ -93,8 +93,126 @@ public final class ChunkBuilder {
                     depth = Math.max(depth, 4);
                 }
 
-                // ---- Climate biomes adjustments (only for land not covered by beach) ----
-                if (!isOceanBiome && !isBeachTerrain) {
+                // ---- Mountain terrain decoration ----
+                // Real mountains: steep cliff faces = exposed stone, flat areas = snow/grass
+                // This creates the natural look where snow sits on flat surfaces but not on cliffs
+                int elevationAboveSea = surfaceY - sea;
+                boolean isMountainTerrain = elevationAboveSea >= EngineConfig.MOUNTAIN_MIN_ELEVATION
+                        && !isOceanBiome && !isBeachTerrain;
+
+                if (isMountainTerrain) {
+                    // Calculate steepness by checking neighboring heights
+                    int steepness = computeSteepness(layers, wx, wz, surfaceY);
+
+                    // Use hash for natural variation
+                    int mountainHash = GlobalTerrainUtils.hash8(wx, wz);
+
+                    // Steepness thresholds
+                    boolean isCliff = steepness >= 6;        // Steep cliff face
+                    boolean isSteepSlope = steepness >= 3;   // Moderate slope
+                    boolean isFlat = steepness <= 2;         // Flat or gentle slope
+
+                    boolean aboveSnowLine = elevationAboveSea >= EngineConfig.MOUNTAIN_SNOW_LINE;
+                    boolean highAlpine = elevationAboveSea >= EngineConfig.MOUNTAIN_HIGH_ALPINE;
+
+                    // ---- Cliff faces: always exposed stone (snow can't stick) ----
+                    if (isCliff) {
+                        top = Blocks.STONE;
+                        filler = Blocks.STONE;
+                        depth = 1;
+                    }
+                    // ---- Steep slopes: mostly stone with some gravel ----
+                    else if (isSteepSlope) {
+                        if (mountainHash < 180) {
+                            top = Blocks.STONE;
+                            filler = Blocks.STONE;
+                            depth = 1;
+                        } else {
+                            top = Blocks.GRAVEL;
+                            filler = Blocks.STONE;
+                            depth = 2;
+                        }
+                    }
+                    // ---- Flat areas: depends on altitude ----
+                    else if (isFlat) {
+                        if (highAlpine) {
+                            // Very high flat areas: mostly snow, some exposed rock
+                            if (mountainHash < 40) {
+                                top = Blocks.STONE;
+                                filler = Blocks.STONE;
+                                depth = 1;
+                            } else {
+                                top = Blocks.SNOW;
+                                filler = Blocks.STONE;
+                                depth = 1;
+                            }
+                        } else if (aboveSnowLine) {
+                            // Above snow line: snow on flat areas
+                            if (mountainHash < 25) {
+                                // Occasional exposed rock
+                                top = Blocks.STONE;
+                                filler = Blocks.STONE;
+                                depth = 1;
+                            } else if (mountainHash < 50) {
+                                // Some gravel patches
+                                top = Blocks.GRAVEL;
+                                filler = Blocks.STONE;
+                                depth = 2;
+                            } else {
+                                // Mostly snow
+                                top = Blocks.SNOW;
+                                filler = Blocks.STONE;
+                                depth = 1;
+                            }
+                        } else {
+                            // Below snow line but in mountain zone: gravel/grass mix
+                            if (mountainHash < 80) {
+                                top = Blocks.GRAVEL;
+                                filler = Blocks.STONE;
+                                depth = 2;
+                            } else if (mountainHash < 140) {
+                                top = Blocks.STONE;
+                                filler = Blocks.STONE;
+                                depth = 1;
+                            }
+                            // else keep biome default (grass)
+                        }
+                    }
+                    // ---- Gentle slopes: transitional ----
+                    else {
+                        if (aboveSnowLine) {
+                            // Mix of snow and rock on gentle slopes
+                            if (mountainHash < 60) {
+                                top = Blocks.STONE;
+                                filler = Blocks.STONE;
+                                depth = 1;
+                            } else if (mountainHash < 100) {
+                                top = Blocks.GRAVEL;
+                                filler = Blocks.STONE;
+                                depth = 2;
+                            } else {
+                                top = Blocks.SNOW;
+                                filler = Blocks.STONE;
+                                depth = 1;
+                            }
+                        } else {
+                            // Below snow line: rocky terrain
+                            if (mountainHash < 100) {
+                                top = Blocks.STONE;
+                                filler = Blocks.STONE;
+                                depth = 1;
+                            } else if (mountainHash < 180) {
+                                top = Blocks.GRAVEL;
+                                filler = Blocks.STONE;
+                                depth = 2;
+                            }
+                            // else keep biome default
+                        }
+                    }
+                }
+
+                // ---- Climate biomes adjustments (only for land not covered by beach or mountain) ----
+                if (!isOceanBiome && !isBeachTerrain && !isMountainTerrain) {
                     // Desert: sand + sandstone under it
                     boolean isDesert = (biome == EngineConfig.BIOME_DESERT);
                     if (isDesert) {
@@ -191,8 +309,9 @@ public final class ChunkBuilder {
 
                     // Top / filler / stone strata
                     if (wy == carvedSurfaceY) {
-                        // Snow biome can use snow top above sea
-                        if (biome == EngineConfig.BIOME_SNOW && carvedSurfaceY > sea + 8) {
+                        // Mountain terrain already has proper snow/stone distribution
+                        // Only apply snow biome override for non-mountain areas
+                        if (!isMountainTerrain && biome == EngineConfig.BIOME_SNOW && carvedSurfaceY > sea + 8) {
                             id = Blocks.SNOW;
                         } else {
                             id = top;
@@ -277,50 +396,50 @@ public final class ChunkBuilder {
 
         // ----- Trees -----
         if (marker == Blocks.STRUCT_OAK_TREE) {
-            if (!isSoil(groundTop)) return;
+            if (!Blocks.isSoil(groundTop)) return;
             int h = 4 + (GlobalTerrainUtils.hash8(wx, wz) % 3);
             placeOakTreePart(chunk, cx, cz, wx, wy, wz, h);
             return;
         }
 
         if (marker == Blocks.STRUCT_ACACIA_TREE) {
-            if (!isSoil(groundTop)) return;
+            if (!Blocks.isSoil(groundTop)) return;
             int h = 4 + (GlobalTerrainUtils.hash8(wx, wz) % 3);
             placeAcaciaTreePart(chunk, cx, cz, wx, wy, wz, h);
             return;
         }
 
         if (marker == Blocks.STRUCT_JUNGLE_TREE) {
-            if (!isSoil(groundTop)) return;
+            if (!Blocks.isSoil(groundTop)) return;
             int h = 7 + (GlobalTerrainUtils.hash8(wx, wz) % 6);
             placeJungleTreePart(chunk, cx, cz, wx, wy, wz, h);
             return;
         }
 
         if (marker == Blocks.STRUCT_MEGA_JUNGLE) {
-            if (!isSoil(groundTop)) return;
+            if (!Blocks.isSoil(groundTop)) return;
             int h = 15 + (GlobalTerrainUtils.hash8(wx, wz) % 9);
             placeMegaJunglePartNormal(chunk, cx, cz, wx, wy, wz, h);
             return;
         }
 
         if (marker == Blocks.STRUCT_SPRUCE_TREE) {
-            if (!isSoil(groundTop)) return;
+            if (!Blocks.isSoil(groundTop)) return;
             int h = 8 + (GlobalTerrainUtils.hash8(wx, wz) % 6);
             placeSpruceTree(chunk, cx, cz, wx, wy, wz, h);
             return;
         }
 
         if (marker == Blocks.STRUCT_SNOW_TREE) {
-            if (!isSoil(groundTop)) return;
+            if (!Blocks.isSoil(groundTop)) return;
             int h = 6 + (GlobalTerrainUtils.hash8(wx, wz) % 4);
             placeSnowTree(chunk, cx, cz, wx, wy, wz, h);
             return;
         }
 
         // ----- Plants (single-block) -----
-        if (isVegetation(marker)) {
-            if (!isGrassLike(groundTop) && !isSoil(groundTop)) return;
+        if (Blocks.isVegetation(marker)) {
+            if (!Blocks.isGrassLike(groundTop) && !Blocks.isSoil(groundTop)) return;
 
             // Place ONLY if that world position is inside THIS chunk
             setIfInThisChunkIfReplaceable(chunk, cx, cz, wx, wy, wz, marker);
@@ -329,7 +448,7 @@ public final class ChunkBuilder {
 
         // ----- Cactus (multi-block) -----
         if (marker == Blocks.CACTUS) {
-            if (!isSandLike(groundTop)) return;
+            if (!Blocks.isSandLike(groundTop)) return;
 
             int height = 2 + (GlobalTerrainUtils.hash8(wx, wz) % 3);
             for (int dy = 0; dy < height; dy++) {
@@ -411,38 +530,30 @@ public final class ChunkBuilder {
         return Math.floorDiv(wx, EngineConfig.CHUNK_SIZE) == cx && Math.floorDiv(wz, EngineConfig.CHUNK_SIZE) == cz;
     }
 
-    private boolean isSoil(short id) {
-        return id == Blocks.DIRT ||
-                id == Blocks.GRASS ||
-                id == Blocks.DRY_GRASS ||
-                id == Blocks.SNOW_GRASS ||
-                id == Blocks.PODZOl_DIRT;
-    }
+    /**
+     * Compute steepness at a position by checking height differences with neighbors.
+     * Used for mountain terrain to determine cliff faces (stone) vs flatter areas (snow/gravel).
+     */
+    private int computeSteepness(RegionLayers layers, int wx, int wz, int centerHeight) {
+        int maxDiff = 0;
 
-    private boolean isGrassLike(short id) {
-        return id == Blocks.GRASS ||
-                id == Blocks.DRY_GRASS ||
-                id == Blocks.SNOW_GRASS ||
-                id == Blocks.SNOW;  // Allow vegetation on pure snow too
-    }
+        // Check 4 cardinal neighbors
+        int[] dx = {-2, 2, 0, 0};
+        int[] dz = {0, 0, -2, 2};
 
-    private boolean isSandLike(short id) {
-        return id == Blocks.SAND ||
-                id == Blocks.DESERT_SAND;
-    }
+        for (int i = 0; i < 4; i++) {
+            int nx = wx + dx[i];
+            int nz = wz + dz[i];
 
-    private boolean isVegetation(short id) {
-        return id == Blocks.TALL_GRASS ||
-                id == Blocks.DRY_WHEAT ||
-                id == Blocks.FLOWER_RED ||
-                id == Blocks.FLOWER_YELLOW ||
-                id == Blocks.BUSH ||
-                id == Blocks.BERRY_BUSH ||
-                id == Blocks.FLOWER_CORNFLOWER ||
-                id == Blocks.FLOWER_HOUSTONIA ||
-                id == Blocks.FLOWER_OXEYE_DAISY ||
-                id == Blocks.FLOWER_RED_DOUBLE ||
-                id == Blocks.VINE;
+            // Get neighbor height from heightmap
+            int neighborHeight = layers.heightmap().heightAt(nx, nz);
+            int diff = Math.abs(centerHeight - neighborHeight);
+            if (diff > maxDiff) {
+                maxDiff = diff;
+            }
+        }
+
+        return maxDiff;
     }
 
     /**

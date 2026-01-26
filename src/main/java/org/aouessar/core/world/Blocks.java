@@ -97,4 +97,37 @@ public final class Blocks {
         };
     }
 
+    public static boolean isSoil(short id) {
+        return id == Blocks.DIRT ||
+                id == Blocks.GRASS ||
+                id == Blocks.DRY_GRASS ||
+                id == Blocks.SNOW_GRASS ||
+                id == Blocks.PODZOl_DIRT;
+    }
+
+    public static boolean isGrassLike(short id) {
+        return id == Blocks.GRASS ||
+                id == Blocks.DRY_GRASS ||
+                id == Blocks.SNOW_GRASS ||
+                id == Blocks.SNOW;  // Allow vegetation on pure snow too
+    }
+
+    public static boolean isSandLike(short id) {
+        return id == Blocks.SAND ||
+                id == Blocks.DESERT_SAND;
+    }
+
+    public static boolean isVegetation(short id) {
+        return id == Blocks.TALL_GRASS ||
+                id == Blocks.DRY_WHEAT ||
+                id == Blocks.FLOWER_RED ||
+                id == Blocks.FLOWER_YELLOW ||
+                id == Blocks.BUSH ||
+                id == Blocks.BERRY_BUSH ||
+                id == Blocks.FLOWER_CORNFLOWER ||
+                id == Blocks.FLOWER_HOUSTONIA ||
+                id == Blocks.FLOWER_OXEYE_DAISY ||
+                id == Blocks.FLOWER_RED_DOUBLE ||
+                id == Blocks.VINE;
+    }
 }
