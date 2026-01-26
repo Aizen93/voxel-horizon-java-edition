@@ -49,56 +49,95 @@ public final class ChunkBuilder {
                 int waterLevel = layers.waterLayer().waterLevelAtUnchecked(wx, wz);
                 boolean hasWater = (waterLevel != WaterLayer.NO_WATER);
 
-                // Beach / shoreline override (helps blending + feels Minecraft)
-                boolean isBeach = Math.abs(surfaceY - sea) <= EngineConfig.BEACH_BAND;
-                if (isBeach && surfaceY >= sea - 2 && surfaceY <= sea + 6) {
+                // ---- Ocean biomes: seabed materials ----
+                boolean isOceanBiome = (biome == EngineConfig.BIOME_OCEAN || biome == EngineConfig.BIOME_DEEP_OCEAN);
+
+                if (isOceanBiome) {
+                    int h = GlobalTerrainUtils.hash8(wx, wz);
+                    if (biome == EngineConfig.BIOME_DEEP_OCEAN) {
+                        // Deep ocean: more gravel and clay
+                        if (h < 80) {
+                            top = Blocks.CLAY;
+                            filler = Blocks.CLAY;
+                        } else if (h < 180) {
+                            top = Blocks.GRAVEL;
+                            filler = Blocks.GRAVEL;
+                        } else {
+                            top = Blocks.SAND;
+                            filler = Blocks.SAND;
+                        }
+                    } else {
+                        // Regular ocean: more sand
+                        if (h < EngineConfig.OCEAN_CLAY_CHANCE_PER_256) {
+                            top = Blocks.CLAY;
+                            filler = Blocks.CLAY;
+                        } else if (h < EngineConfig.OCEAN_CLAY_CHANCE_PER_256 + EngineConfig.OCEAN_GRAVEL_CHANCE_PER_256) {
+                            top = Blocks.GRAVEL;
+                            filler = Blocks.GRAVEL;
+                        } else {
+                            top = Blocks.SAND;
+                            filler = Blocks.SAND;
+                        }
+                    }
+                    depth = Math.max(depth, 4);
+                }
+
+                // ---- Beach terrain feature: sand near shorelines ----
+                // Applied to land near sea level, regardless of biome
+                boolean isBeachTerrain = !isOceanBiome
+                        && Math.abs(surfaceY - sea) <= EngineConfig.BEACH_BAND
+                        && surfaceY >= sea - 2 && surfaceY <= sea + 6;
+                if (isBeachTerrain) {
                     top = Blocks.SAND;
                     filler = Blocks.SAND;
                     depth = Math.max(depth, 4);
                 }
 
-                // Desert: sand + sandstone under it
-                boolean isDesert = (biome == EngineConfig.BIOME_DESERT);
-                if (isDesert && !isBeach) {
-                    top = Blocks.DESERT_SAND;
-                    filler = Blocks.DESERT_SAND;
-                    depth = Math.max(depth, 6);
-                }
-
-                // Swamp: mix of grass, clay, and gravel patches at low elevation
-                boolean isSwamp = (biome == EngineConfig.BIOME_SWAMP);
-                if (isSwamp && !isBeach) {
-                    int swampHash = GlobalTerrainUtils.hash8(wx + 12345, wz + 67890);
-                    if (swampHash < 80) {
-                        // ~31% clay patches
-                        top = Blocks.CLAY;
-                        filler = Blocks.CLAY;
-                        depth = Math.max(depth, 3);
-                    } else if (swampHash < 120) {
-                        // ~16% gravel patches
-                        top = Blocks.GRAVEL;
-                        filler = Blocks.DIRT;
-                        depth = Math.max(depth, 3);
+                // ---- Climate biomes adjustments (only for land not covered by beach) ----
+                if (!isOceanBiome && !isBeachTerrain) {
+                    // Desert: sand + sandstone under it
+                    boolean isDesert = (biome == EngineConfig.BIOME_DESERT);
+                    if (isDesert) {
+                        top = Blocks.DESERT_SAND;
+                        filler = Blocks.DESERT_SAND;
+                        depth = Math.max(depth, 6);
                     }
-                    // else keep default grass/dirt from surface rules
-                }
 
-                // Underwater seabed: sand/gravel/clay mix
-                boolean underwater = hasWater && surfaceY < waterLevel;
-                if (underwater) {
-                    int h = GlobalTerrainUtils.hash8(wx, wz);
-                    if (h < EngineConfig.OCEAN_CLAY_CHANCE_PER_256) {
-                        top = Blocks.CLAY;
-                        filler = Blocks.CLAY;
-                        depth = Math.max(depth, 3);
-                    } else if (h < EngineConfig.OCEAN_CLAY_CHANCE_PER_256 + EngineConfig.OCEAN_GRAVEL_CHANCE_PER_256) {
-                        top = Blocks.GRAVEL;
-                        filler = Blocks.GRAVEL;
-                        depth = Math.max(depth, 3);
-                    } else {
-                        top = Blocks.SAND;
-                        filler = Blocks.SAND;
-                        depth = Math.max(depth, 4);
+                    // Swamp: mix of grass, clay, and gravel patches at low elevation
+                    boolean isSwamp = (biome == EngineConfig.BIOME_SWAMP);
+                    if (isSwamp) {
+                        int swampHash = GlobalTerrainUtils.hash8(wx + 12345, wz + 67890);
+                        if (swampHash < 80) {
+                            // ~31% clay patches
+                            top = Blocks.CLAY;
+                            filler = Blocks.CLAY;
+                            depth = Math.max(depth, 3);
+                        } else if (swampHash < 120) {
+                            // ~16% gravel patches
+                            top = Blocks.GRAVEL;
+                            filler = Blocks.DIRT;
+                            depth = Math.max(depth, 3);
+                        }
+                        // else keep default grass/dirt from surface rules
+                    }
+
+                    // Underwater areas in non-ocean biomes (lakes, rivers)
+                    boolean underwater = hasWater && surfaceY < waterLevel;
+                    if (underwater) {
+                        int h = GlobalTerrainUtils.hash8(wx, wz);
+                        if (h < EngineConfig.OCEAN_CLAY_CHANCE_PER_256) {
+                            top = Blocks.CLAY;
+                            filler = Blocks.CLAY;
+                            depth = Math.max(depth, 3);
+                        } else if (h < EngineConfig.OCEAN_CLAY_CHANCE_PER_256 + EngineConfig.OCEAN_GRAVEL_CHANCE_PER_256) {
+                            top = Blocks.GRAVEL;
+                            filler = Blocks.GRAVEL;
+                            depth = Math.max(depth, 3);
+                        } else {
+                            top = Blocks.SAND;
+                            filler = Blocks.SAND;
+                            depth = Math.max(depth, 4);
+                        }
                     }
                 }
 
@@ -145,7 +184,7 @@ public final class ChunkBuilder {
 
                     // Riverbed override: top few blocks become gravel/sand
                     if (carvedRiver && below <= EngineConfig.RIVERBED_THICKNESS) {
-                        id = underwater ? Blocks.GRAVEL : Blocks.GRAVEL;
+                        id = Blocks.GRAVEL;
                         chunk.setBlock(lx, wy, lz, id);
                         continue;
                     }

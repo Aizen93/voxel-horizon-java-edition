@@ -105,6 +105,9 @@ public final class DefaultStructureBuilder implements StructureBuilder {
 
                     short biome = biomeMap.biomeIdAtUnchecked(wx, wz);
 
+                    // Skip geographic biomes that shouldn't have trees
+                    if (isNoStructureBiome(biome)) continue;
+
                     short marker = getMarker(h, biome);
 
                     if (marker == 0) continue;
@@ -125,6 +128,9 @@ public final class DefaultStructureBuilder implements StructureBuilder {
 
                     short biome = biomeMap.biomeIdAtUnchecked(wx, wz);
 
+                    // Skip geographic biomes that shouldn't have vegetation
+                    if (isNoStructureBiome(biome)) continue;
+
                     short plant = getVegetation(h, biome);
                     if (plant == 0) continue;
 
@@ -134,6 +140,15 @@ public final class DefaultStructureBuilder implements StructureBuilder {
         }
 
         return new StructureMap(rect, placements);
+    }
+
+    /**
+     * Check if this biome should not have any structures (trees/vegetation).
+     * Only ocean biomes are excluded - beach is a terrain feature handled by ChunkBuilder.
+     */
+    private static boolean isNoStructureBiome(short biome) {
+        return biome == EngineConfig.BIOME_OCEAN
+            || biome == EngineConfig.BIOME_DEEP_OCEAN;
     }
 
     private static short getMarker(long h, short biome) {

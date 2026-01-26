@@ -35,17 +35,19 @@ public final class EngineConfig {
     public static final float TERRAIN_RIDGE_FREQ     = 1.0f / 1536.0f;
     public static final float TERRAIN_DETAIL_FREQ    = 1.0f / 256.0f;
 
-    // Domain warp
+    // Domain warp - lower amplitude = smoother coastlines, fewer tiny islands
     public static final float TERRAIN_WARP_FREQ      = 1.0f / 4096.0f;
-    public static final float TERRAIN_WARP_AMP_BLOCKS = 180.0f;
+    public static final float TERRAIN_WARP_AMP_BLOCKS = 120.0f; // was 180.0f - reduced for smoother coasts
 
     // Coastline / landmass shape
     // land = smoothstep(COAST_OCEAN, COAST_LAND, continentalness)
-    public static final float TERRAIN_COAST_OCEAN = -0.25f;
-    public static final float TERRAIN_COAST_LAND  =  0.10f;
+    // Wider gap = smoother coastlines, narrower gap = sharper coastlines
+    // Higher values = fewer small islands, more continuous land
+    public static final float TERRAIN_COAST_OCEAN = -0.05f;  // was -0.15f - raised significantly to eliminate small islands
+    public static final float TERRAIN_COAST_LAND  =  0.30f;  // was 0.20f - raised for much cleaner land boundaries
 
     // inland = smoothstep(INLAND_START, INLAND_FULL, continentalness)
-    public static final float TERRAIN_INLAND_START = 0.10f;
+    public static final float TERRAIN_INLAND_START = 0.30f;  // was 0.20f
     public static final float TERRAIN_INLAND_FULL  = 0.70f;
 
     // Elevation (blocks)
@@ -68,9 +70,9 @@ public final class EngineConfig {
     public static final float TERRAIN_RIDGE_EXP = 1.55f;
 
     // + => more land, - => more ocean
-    public static final float TERRAIN_CONTINENT_BIAS = 0.12f; // try 0.08..0.18
+    public static final float TERRAIN_CONTINENT_BIAS = 0.22f; // was 0.18f - more land bias
     // >1 makes extremes more common (bigger solid land + deep ocean), <1 makes more coasts/islands
-    public static final float TERRAIN_CONTINENT_CONTRAST = 1.00f;
+    public static final float TERRAIN_CONTINENT_CONTRAST = 1.50f; // was 1.25f - much higher to eliminate fragmentation
 
     // --- Mountain ranges (rare, long chains) (Himalaya-like )---
     public static final float TERRAIN_RANGE_FREQ = 1.0f / 8192.0f;   // big features
@@ -123,13 +125,24 @@ public final class EngineConfig {
     public static final float SWAMP_NOISE_FREQ = 1.0f / (2048.0f * BIOME_SIZE_SCALE);
 
     // Biome IDs (keep or change as you like, but generator/decorator should match)
-    public static final short BIOME_PLAINS = 0;
-    public static final short BIOME_DESERT = 1;
-    public static final short BIOME_SNOW   = 2;
-    public static final short BIOME_FOREST = 3;
+    // Climate biomes (land) - driven by temperature/humidity grid
+    public static final short BIOME_PLAINS  = 0;
+    public static final short BIOME_DESERT  = 1;
+    public static final short BIOME_SNOW    = 2;
+    public static final short BIOME_FOREST  = 3;
     public static final short BIOME_SAVANNA = 4;
-    public static final short BIOME_SWAMP  = 5;
-    public static final short BIOME_JUNGLE = 6;
+    public static final short BIOME_SWAMP   = 5;
+    public static final short BIOME_JUNGLE  = 6;
+
+    // Geographic biomes (structural) - driven by world topology (water bodies)
+    public static final short BIOME_OCEAN      = 7;
+    public static final short BIOME_DEEP_OCEAN = 8;
+
+    // Ocean depth thresholds
+    public static final int DEEP_OCEAN_DEPTH = 20;   // Blocks below sea level for deep ocean
+
+    // Swamp generation - inland low-lying areas only
+    public static final int SWAMP_MIN_DISTANCE_FROM_OCEAN = 16; // Blocks inland from coastline
 
     // Climate temperature zones (0.0 = coldest, 1.0 = hottest)
     public static final float CLIMATE_COLD_MAX = 0.25f;     // Snow biome threshold

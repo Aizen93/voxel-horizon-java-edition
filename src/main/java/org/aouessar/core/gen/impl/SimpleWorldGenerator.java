@@ -28,8 +28,8 @@ public final class SimpleWorldGenerator implements WorldGenerator {
         continents.SetNoiseType(FastNoiseLite.NoiseType.OpenSimplex2);
         continents.SetFrequency(EngineConfig.TERRAIN_CONTINENT_FREQ);
         continents.SetFractalType(FastNoiseLite.FractalType.FBm);
-        continents.SetFractalOctaves(5);
-        continents.SetFractalGain(0.5f);
+        continents.SetFractalOctaves(3);  // was 5 - fewer octaves = smoother, fewer small islands
+        continents.SetFractalGain(0.4f);  // was 0.5 - lower gain = less high-frequency detail
         continents.SetFractalLacunarity(2.0f);
 
         FastNoiseLite large = new FastNoiseLite(GlobalTerrainUtils.mixSeed(seed, 0x12121212));

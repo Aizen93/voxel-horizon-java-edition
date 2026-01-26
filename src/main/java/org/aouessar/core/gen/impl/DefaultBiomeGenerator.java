@@ -9,16 +9,29 @@ import org.aouessar.core.world.layers.LayerRect;
 import org.aouessar.shared.EngineConfig;
 
 /**
- * Climate Grid Biome Generator - generates large, continuous biomes using a
- * temperature-humidity climate grid system.
+ * Two-Category Biome Generator - separates biomes into geographic (water) and climate (land) types.
  *
- * Biomes transition logically following realistic climate progressions:
+ * Geographic biomes (determined by altitude - below sea level):
+ * - Ocean: below sea level
+ * - Deep Ocean: significantly below sea level
+ *
+ * Climate biomes (determined by temperature/humidity grid, applied to land only):
  * - Snow → Plains → Forest → Jungle (cold-to-hot, wet)
  * - Snow → Plains → Savanna → Desert (cold-to-hot, dry)
  *
- * Opposite biomes (e.g., Snow and Desert) never directly neighbor each other.
- * Swamp biomes only appear in low-elevation, high-humidity zones.
- * Biome size is controlled via BIOME_SIZE_SCALE in EngineConfig.
+ * Swamp is a hybrid biome: requires low elevation, high humidity, AND must be inland
+ * (not near ocean coastlines). Swamps form in river valleys and low-lying inland areas.
+ *
+ * NOTE: Terrain features like mountains, beaches, cliffs, and lakes are NOT biomes.
+ * They are handled by:
+ * - WorldGenerator (heightmap): mountains, hills, valleys
+ * - ChunkBuilder: beach surface materials based on proximity to water
+ * - WaterGenerator: lakes and rivers
+ *
+ * Rules:
+ * - Ocean is a real biome, determined by altitude (below sea level)
+ * - Opposite climate biomes (e.g., Snow and Desert) never directly neighbor
+ * - Biomes form large, continuous regions controlled via BIOME_SIZE_SCALE
  */
 public final class DefaultBiomeGenerator implements BiomeGenerator {
 
@@ -39,17 +52,15 @@ public final class DefaultBiomeGenerator implements BiomeGenerator {
         warp.SetDomainWarpAmp(EngineConfig.BIOME_WARP_AMP_BLOCKS);
 
         // ---- Temperature noise (primary climate axis - "latitude") ----
-        // Uses very low frequency for large continuous zones
         FastNoiseLite tempN = new FastNoiseLite(GlobalTerrainUtils.mixSeed(seed, 0xBB67AE85));
         tempN.SetNoiseType(FastNoiseLite.NoiseType.OpenSimplex2S);
         tempN.SetFrequency(EngineConfig.BIOME_TEMP_FREQ);
         tempN.SetFractalType(FastNoiseLite.FractalType.FBm);
-        tempN.SetFractalOctaves(2);  // Few octaves for smooth gradients
+        tempN.SetFractalOctaves(2);
         tempN.SetFractalGain(0.4f);
         tempN.SetFractalLacunarity(2.0f);
 
         // ---- Humidity noise (secondary climate axis) ----
-        // Completely independent from temperature for diverse biome combinations
         FastNoiseLite humidN = new FastNoiseLite(GlobalTerrainUtils.mixSeed(seed, 0x3C6EF372));
         humidN.SetNoiseType(FastNoiseLite.NoiseType.OpenSimplex2S);
         humidN.SetFrequency(EngineConfig.BIOME_HUMID_FREQ);
@@ -59,7 +70,6 @@ public final class DefaultBiomeGenerator implements BiomeGenerator {
         humidN.SetFractalLacunarity(2.0f);
 
         // ---- Continentalness noise for latitudinal variation ----
-        // Creates large-scale temperature gradients (simulates real-world latitudes)
         FastNoiseLite contN = new FastNoiseLite(GlobalTerrainUtils.mixSeed(seed, 0x510E527F));
         contN.SetNoiseType(FastNoiseLite.NoiseType.OpenSimplex2S);
         contN.SetFrequency(EngineConfig.BIOME_CONTINENTAL_FREQ);
@@ -100,8 +110,30 @@ public final class DefaultBiomeGenerator implements BiomeGenerator {
                 float wx = p.x;
                 float wz = p.y;
 
-                // Sample climate values
-                // Use rotated coordinates to decorrelate temperature and humidity
+                int h = heightmap.heightAtUnchecked(wx0, wz0);
+                int elevationAboveSea = h - sea;
+
+                // ========================================
+                // PHASE 1: Ocean biomes (below sea level)
+                // ========================================
+
+                // Deep Ocean: significantly below sea level
+                if (elevationAboveSea < -EngineConfig.DEEP_OCEAN_DEPTH) {
+                    biomes[i++] = EngineConfig.BIOME_DEEP_OCEAN;
+                    continue;
+                }
+
+                // Ocean: below sea level (but not deep)
+                if (elevationAboveSea < 0) {
+                    biomes[i++] = EngineConfig.BIOME_OCEAN;
+                    continue;
+                }
+
+                // ========================================
+                // PHASE 2: Land biomes (climate grid)
+                // ========================================
+
+                // Sample climate values with rotated coordinates to decorrelate
                 float tx = 0.866f * wx + 0.5f * wz + 100000.0f;
                 float tz = -0.5f * wx + 0.866f * wz - 100000.0f;
 
@@ -114,70 +146,91 @@ public final class DefaultBiomeGenerator implements BiomeGenerator {
                 float contRaw = contN.GetNoise(wx * 0.5f, wz * 0.5f);
 
                 // Combine temperature with continentalness for latitudinal feel
-                // Continentalness adds large-scale temperature variation
                 float tempCombined = tempRaw * 0.7f + contRaw * 0.3f;
 
                 // Convert to 0-1 range with smoothing
                 float temp = GlobalTerrainUtils.clamp01((tempCombined + 1.0f) * 0.5f);
                 float humid = GlobalTerrainUtils.clamp01((humidRaw + 1.0f) * 0.5f);
 
-                int h = heightmap.heightAtUnchecked(wx0, wz0);
-
-                // Ocean floor - use plains biome ID for deep underwater areas
-                if (h < sea - 8) {
-                    biomes[i++] = EngineConfig.BIOME_PLAINS;
-                    continue;
-                }
-
-                // Shallow ocean/underwater areas - use plains (prevents jungle in shallow water)
-                // This ensures coastal areas don't get jungle biome
-                if (h < sea) {
-                    biomes[i++] = EngineConfig.BIOME_PLAINS;
-                    continue;
-                }
-
-                // Beach zone handling - immediate shoreline gets restricted biome treatment
-                // This creates a small buffer zone to prevent jungle right at water's edge
-                int elevationAboveSea = h - sea;
-                boolean isCoastalZone = elevationAboveSea <= 2;  // Only immediate beach is restricted
-
-                // Altitude cooling effect - mountains get colder
-                float aboveSea = elevationAboveSea / 80.0f;
-                if (aboveSea < 0f) aboveSea = 0f;
-                if (aboveSea > 1f) aboveSea = 1f;
-                temp = GlobalTerrainUtils.clamp01(temp - aboveSea * EngineConfig.BIOME_ALTITUDE_COOLING);
+                // Altitude cooling effect - higher areas get colder
+                float altitudeCooling = elevationAboveSea / 80.0f;
+                if (altitudeCooling < 0f) altitudeCooling = 0f;
+                if (altitudeCooling > 1f) altitudeCooling = 1f;
+                temp = GlobalTerrainUtils.clamp01(temp - altitudeCooling * EngineConfig.BIOME_ALTITUDE_COOLING);
 
                 // Transition noise for smooth boundaries (small perturbation)
                 float transition = transitionN.GetNoise(wx + 50000.0f, wz + 50000.0f) * 0.08f;
                 temp = GlobalTerrainUtils.clamp01(temp + transition);
                 humid = GlobalTerrainUtils.clamp01(humid + transition * 0.5f);
 
-                // Check for swamp conditions BEFORE determining base biome
-                // Swamps only in low elevation, high humidity areas
-                boolean isSwampCandidate = elevationAboveSea >= 0
-                        && elevationAboveSea <= EngineConfig.SWAMP_MAX_ELEVATION_ABOVE_SEA
-                        && humid >= EngineConfig.SWAMP_MIN_HUMIDITY;
+                // ========================================
+                // SWAMP: Inland low-lying humid areas
+                // Must be: low elevation, high humidity, NOT near ocean coastlines
+                // ========================================
+                boolean isLowElevation = elevationAboveSea <= EngineConfig.SWAMP_MAX_ELEVATION_ABOVE_SEA;
+                boolean isHumid = humid >= EngineConfig.SWAMP_MIN_HUMIDITY;
 
-                if (isSwampCandidate) {
-                    // Use swamp noise to create isolated swamp patches, not everywhere
-                    float swampValue = GlobalTerrainUtils.to01(swampN.GetNoise(wx, wz));
-                    // Temperature constraint: swamps don't appear in very cold or very hot regions
-                    boolean tempSuitableForSwamp = temp > 0.30f && temp < 0.70f;
+                if (isLowElevation && isHumid) {
+                    // Check distance from ocean - swamps must be INLAND
+                    int distanceFromOcean = computeDistanceFromOcean(heightmap, rect, wx0, wz0, sea);
+                    boolean isInland = distanceFromOcean >= EngineConfig.SWAMP_MIN_DISTANCE_FROM_OCEAN;
 
-                    if (tempSuitableForSwamp && swampValue > 0.55f) {
-                        biomes[i++] = EngineConfig.BIOME_SWAMP;
-                        continue;
+                    if (isInland) {
+                        // Use swamp noise to create isolated swamp patches
+                        float swampValue = GlobalTerrainUtils.to01(swampN.GetNoise(wx, wz));
+                        // Temperature constraint: swamps don't appear in very cold or very hot regions
+                        boolean tempSuitableForSwamp = temp > 0.30f && temp < 0.70f;
+
+                        if (tempSuitableForSwamp && swampValue > 0.50f) {
+                            biomes[i++] = EngineConfig.BIOME_SWAMP;
+                            continue;
+                        }
                     }
                 }
 
-                // Determine biome from climate grid
-                // For coastal zones, limit to certain biomes (no jungle directly on coast)
-                short biome = selectBiomeFromClimate(temp, humid, isCoastalZone);
+                // ========================================
+                // Standard climate biomes from the climate grid
+                // ========================================
+                boolean isNearCoast = elevationAboveSea <= 6;
+                short biome = selectBiomeFromClimate(temp, humid, isNearCoast);
                 biomes[i++] = biome;
             }
         }
 
         return new BiomeMap(rect, biomes);
+    }
+
+    /**
+     * Compute the minimum distance from this position to ocean (below sea level).
+     * Used to ensure swamps are inland, not near coastlines.
+     */
+    private int computeDistanceFromOcean(Heightmap heightmap, LayerRect rect, int wx, int wz, int sea) {
+        // Check in expanding rings until we find ocean or reach max distance
+        final int maxDist = EngineConfig.SWAMP_MIN_DISTANCE_FROM_OCEAN + 4;
+
+        for (int dist = 1; dist <= maxDist; dist += 4) {
+            // Sample points at this distance
+            for (int d = -dist; d <= dist; d += 4) {
+                // Check all 4 sides of the square at this distance
+                int[][] checks = {
+                    {wx + d, wz - dist}, {wx + d, wz + dist},
+                    {wx - dist, wz + d}, {wx + dist, wz + d}
+                };
+
+                for (int[] check : checks) {
+                    int sx = check[0];
+                    int sz = check[1];
+                    if (sx >= rect.minX && sx < rect.maxXExclusive() && sz >= rect.minZ && sz < rect.maxZExclusive()) {
+                        int sampleH = heightmap.heightAtUnchecked(sx, sz);
+                        if (sampleH < sea) {
+                            return dist;
+                        }
+                    }
+                }
+            }
+        }
+
+        return maxDist + 1; // No ocean found nearby
     }
 
     /**
