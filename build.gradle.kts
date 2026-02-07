@@ -80,3 +80,16 @@ tasks.withType<JavaExec>().configureEach {
     // Optional but helpful: force UTF-8
     systemProperty("file.encoding", "UTF-8")
 }
+
+// Task to run the 2D Biome Map Viewer
+tasks.register<JavaExec>("runBiomeViewer") {
+    group = "application"
+    description = "Run the 2D Biome Map Viewer"
+    mainClass.set("org.aouessar.app.BiomeMapViewer")
+    classpath = sourceSets["main"].runtimeClasspath
+    standardOutput = System.out
+    errorOutput = System.err
+    isIgnoreExitValue = false
+    systemProperty("file.encoding", "UTF-8")
+}
+

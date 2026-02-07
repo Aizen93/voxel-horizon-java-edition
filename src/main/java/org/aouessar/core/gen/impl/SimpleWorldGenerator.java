@@ -28,8 +28,8 @@ public final class SimpleWorldGenerator implements WorldGenerator {
         continents.SetNoiseType(FastNoiseLite.NoiseType.OpenSimplex2);
         continents.SetFrequency(EngineConfig.TERRAIN_CONTINENT_FREQ);
         continents.SetFractalType(FastNoiseLite.FractalType.FBm);
-        continents.SetFractalOctaves(5);
-        continents.SetFractalGain(0.5f);
+        continents.SetFractalOctaves(3);  // was 5 - fewer octaves = smoother, fewer small islands
+        continents.SetFractalGain(0.4f);  // was 0.5 - lower gain = less high-frequency detail
         continents.SetFractalLacunarity(2.0f);
 
         FastNoiseLite large = new FastNoiseLite(GlobalTerrainUtils.mixSeed(seed, 0x12121212));
@@ -81,6 +81,15 @@ public final class SimpleWorldGenerator implements WorldGenerator {
         peaks.SetFractalOctaves(3);
         peaks.SetFractalGain(0.5f);
         peaks.SetFractalLacunarity(2.0f);
+
+        // Rare deep ocean islands (volcanic islands like Maldives, Bora Bora)
+        FastNoiseLite oceanIslands = new FastNoiseLite(GlobalTerrainUtils.mixSeed(seed, 0x77777777));
+        oceanIslands.SetNoiseType(FastNoiseLite.NoiseType.OpenSimplex2);
+        oceanIslands.SetFrequency(EngineConfig.TERRAIN_OCEAN_ISLAND_FREQ);
+        oceanIslands.SetFractalType(FastNoiseLite.FractalType.FBm);
+        oceanIslands.SetFractalOctaves(3);
+        oceanIslands.SetFractalGain(0.5f);
+        oceanIslands.SetFractalLacunarity(2.0f);
 
         final int sea = EngineConfig.SEA_LEVEL;
 
@@ -188,15 +197,90 @@ public final class SimpleWorldGenerator implements WorldGenerator {
 
                 mountains += megaPeaks;
 
-                // -------------------- Oceans --------------------
+                // -------------------- Oceans with varied depth --------------------
 
+                // offshore: 0 = land, 1 = deep ocean
                 float offshore = 1.0f - land;
-                float oceanDepth = offshore * (EngineConfig.TERRAIN_OCEAN_BASE_DEPTH + offshore * EngineConfig.TERRAIN_OCEAN_EXTRA_DEPTH);
-                oceanDepth += offshore * (d * EngineConfig.TERRAIN_SEABED_VARIATION);
 
-                float oceanHeight = sea - oceanDepth + (L * EngineConfig.TERRAIN_OCEAN_LARGE_VARIATION);
-                float landHeight  = sea + uplift + rolling + hills + mountains;
+                // Create a very gradual depth gradient from coast to deep ocean
+                // Use cubic curve (offshore^3) for much slower initial descent - stays shallow longer
+                float shallowGradient = offshore * offshore;  // Quadratic for initial shallow zone
+                float deepGradient = offshore * offshore * offshore;  // Cubic for deep ocean transition
 
+                // Shallow coastal zone - very gradual slope near shore
+                // Only reaches ~12 blocks deep even at offshore=0.5
+                float shallowDepth = EngineConfig.TERRAIN_OCEAN_BASE_DEPTH * shallowGradient;
+
+                // Deep ocean depth - only kicks in significantly when offshore > 0.6
+                // Uses cubic curve so it stays shallow much longer
+                float deepTransition = GlobalTerrainUtils.smoothstep(0.5f, 0.85f, offshore);
+                float deepDepth = EngineConfig.TERRAIN_OCEAN_EXTRA_DEPTH * deepTransition * deepGradient;
+
+                // Deep ocean floor variation - only in truly deep areas (offshore > 0.75)
+                float deepOceanFactor = GlobalTerrainUtils.smoothstep(0.75f, 0.95f, offshore);
+                float deepFloorVariation = deepOceanFactor * EngineConfig.TERRAIN_DEEP_OCEAN_EXTRA_DEPTH
+                        * (0.5f + 0.5f * L); // Use large noise for underwater hills/valleys
+
+                // Rare ocean trenches only in the deepest areas (offshore > 0.85)
+                float trenchNoise = GlobalTerrainUtils.clamp01((r + 1.0f) * 0.5f); // Reuse ridge noise
+                float trenchFactor = GlobalTerrainUtils.smoothstep(0.85f, 0.98f, offshore)
+                        * GlobalTerrainUtils.smoothstep(0.7f, 0.95f, trenchNoise);
+                float trenchDepth = trenchFactor * EngineConfig.TERRAIN_OCEAN_TRENCH_DEPTH;
+
+                // Seabed detail variation (underwater terrain texture) - reduced near shore
+                float seabedDetail = shallowGradient * d * EngineConfig.TERRAIN_SEABED_VARIATION;
+
+                // Large-scale underwater terrain variation - also reduced near shore
+                float underwaterLarge = shallowGradient * L * EngineConfig.TERRAIN_OCEAN_LARGE_VARIATION;
+
+                // Combine all ocean depth components
+                float totalOceanDepth = shallowDepth + deepDepth + deepFloorVariation + trenchDepth + seabedDetail;
+
+                // Ocean floor height (lower = deeper)
+                float oceanHeight = sea - totalOceanDepth + underwaterLarge;
+
+                // Ensure deep ocean has minimum depth only when truly far offshore
+                if (offshore > 0.8f) {
+                    float minDeepHeight = sea - EngineConfig.TERRAIN_DEEP_OCEAN_MIN_DEPTH;
+                    float enforceAmount = GlobalTerrainUtils.smoothstep(0.8f, 0.95f, offshore);
+                    float targetHeight = minDeepHeight + underwaterLarge * 0.3f;
+                    oceanHeight = org.joml.Math.lerp(oceanHeight, Math.min(oceanHeight, targetHeight), enforceAmount);
+                }
+
+                // -------------------- Rare Deep Ocean Islands (volcanic) --------------------
+                // Only spawn in truly deep ocean areas, FAR from any land (offshore > 0.92)
+                // These are like Maldives, Bora Bora - rare volcanic islands rising from deep ocean
+                if (offshore > 0.92f) {
+                    float islandNoise = (oceanIslands.GetNoise(wx, wz) + 1.0f) * 0.5f; // 0..1
+
+                    // Only create islands where noise exceeds threshold (very rare)
+                    if (islandNoise > EngineConfig.TERRAIN_OCEAN_ISLAND_THRESHOLD) {
+                        // How much above threshold determines island intensity
+                        float islandIntensity = (islandNoise - EngineConfig.TERRAIN_OCEAN_ISLAND_THRESHOLD)
+                                / (1.0f - EngineConfig.TERRAIN_OCEAN_ISLAND_THRESHOLD);
+
+                        // Sharp peak shape - small islands with distinct peaks
+                        islandIntensity = (float) Math.pow(islandIntensity, EngineConfig.TERRAIN_OCEAN_ISLAND_POWER);
+
+                        // Full island effect only in the deepest ocean
+                        float deepOceanMask = GlobalTerrainUtils.smoothstep(0.92f, 0.98f, offshore);
+                        islandIntensity *= deepOceanMask;
+
+                        // Island rises from ocean floor to above sea level
+                        float islandRise = islandIntensity * (EngineConfig.TERRAIN_OCEAN_ISLAND_BASE + EngineConfig.TERRAIN_OCEAN_ISLAND_HEIGHT);
+
+                        // Add some variation to island height using detail noise
+                        float islandVariation = 1.0f + d * 0.2f;
+                        islandRise *= islandVariation;
+
+                        // Raise the ocean floor (or create land above sea level)
+                        oceanHeight += islandRise;
+                    }
+                }
+
+                float landHeight = sea + uplift + rolling + hills + mountains;
+
+                // Smooth transition between land and ocean
                 float shoreBlend = GlobalTerrainUtils.smoothstep(0.35f, 0.65f, land);
                 float height = org.joml.Math.lerp(oceanHeight, landHeight, shoreBlend);
 

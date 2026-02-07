@@ -222,8 +222,10 @@ public final class LwjglRendererV1 {
                 );
 
                 // -----------------------------
-                // DRAW
+                // MAIN PASS - DRAW to default framebuffer
                 // -----------------------------
+                sky.render(fogCycle);
+
                 atlasTex.bind(0);
 
                 // ---- PASS 1: OPAQUE ----
@@ -245,6 +247,14 @@ public final class LwjglRendererV1 {
 
                 applyPerFrameUniforms(shaderTranslucent, camera, mvp, fogCycle);
                 shaderTranslucent.setUniform1f("uTime", (float) now);
+
+                // Sky colors and sun direction for water reflections
+                shaderTranslucent.setUniform3f("uSkyTopColor",
+                        fogCycle.skyTopR(), fogCycle.skyTopG(), fogCycle.skyTopB());
+                shaderTranslucent.setUniform3f("uSkyHorizonColor",
+                        fogCycle.skyHorizonR(), fogCycle.skyHorizonG(), fogCycle.skyHorizonB());
+                shaderTranslucent.setUniform3f("uSunDir",
+                        fogCycle.sunDirX(), fogCycle.sunDirY(), fogCycle.sunDirZ());
 
                 float camChunkX = camera.position.x / EngineConfig.CHUNK_SIZE;
                 float camChunkZ = camera.position.z / EngineConfig.CHUNK_SIZE;

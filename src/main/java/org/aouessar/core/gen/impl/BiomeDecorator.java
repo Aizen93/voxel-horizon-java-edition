@@ -1,6 +1,9 @@
 package org.aouessar.core.gen.impl;
 
 import org.aouessar.core.gen.SurfaceDecorator;
+import org.aouessar.core.gen.config.BiomeConfig;
+import org.aouessar.core.gen.config.WorldContentConfig;
+import org.aouessar.core.gen.config.WorldContentLoader;
 import org.aouessar.core.math.GlobalTerrainUtils;
 import org.aouessar.core.noise.FastNoiseLite;
 import org.aouessar.core.world.Blocks;
@@ -11,6 +14,52 @@ import org.aouessar.core.world.layers.SurfaceRules;
 import org.aouessar.shared.EngineConfig;
 
 public final class BiomeDecorator implements SurfaceDecorator {
+
+    // Static palette data loaded once from JSON at class initialization
+    private static final short[] BIOME_TOP_BLOCKS = new short[16];
+    private static final short[] BIOME_FILLER_BLOCKS = new short[16];
+    private static final int[] BIOME_FILLER_DEPTHS = new int[16];
+
+    static {
+        // Set defaults first
+        for (int i = 0; i < 16; i++) {
+            BIOME_TOP_BLOCKS[i] = Blocks.GRASS;
+            BIOME_FILLER_BLOCKS[i] = Blocks.DIRT;
+            BIOME_FILLER_DEPTHS[i] = 4;
+        }
+
+        // Set defaults for ocean biomes (not in JSON config)
+        BIOME_TOP_BLOCKS[EngineConfig.BIOME_OCEAN] = Blocks.SAND;
+        BIOME_FILLER_BLOCKS[EngineConfig.BIOME_OCEAN] = Blocks.SAND;
+        BIOME_FILLER_DEPTHS[EngineConfig.BIOME_OCEAN] = 4;
+
+        BIOME_TOP_BLOCKS[EngineConfig.BIOME_DEEP_OCEAN] = Blocks.GRAVEL;
+        BIOME_FILLER_BLOCKS[EngineConfig.BIOME_DEEP_OCEAN] = Blocks.GRAVEL;
+        BIOME_FILLER_DEPTHS[EngineConfig.BIOME_DEEP_OCEAN] = 3;
+
+        // Load from JSON config (climate biomes)
+        try {
+            WorldContentConfig config = WorldContentLoader.load();
+            loadPalette(config, EngineConfig.BIOME_PLAINS, "PLAINS");
+            loadPalette(config, EngineConfig.BIOME_DESERT, "DESERT");
+            loadPalette(config, EngineConfig.BIOME_SNOW, "SNOW");
+            loadPalette(config, EngineConfig.BIOME_FOREST, "FOREST");
+            loadPalette(config, EngineConfig.BIOME_SAVANNA, "SAVANNA");
+            loadPalette(config, EngineConfig.BIOME_SWAMP, "SWAMP");
+            loadPalette(config, EngineConfig.BIOME_JUNGLE, "JUNGLE");
+        } catch (Exception e) {
+            System.err.println("Failed to load world content config, using defaults: " + e.getMessage());
+        }
+    }
+
+    private static void loadPalette(WorldContentConfig config, short biomeId, String biomeName) {
+        BiomeConfig bc = config.getBiome(biomeName);
+        if (bc != null) {
+            BIOME_TOP_BLOCKS[biomeId] = bc.topBlock();
+            BIOME_FILLER_BLOCKS[biomeId] = bc.fillerBlock();
+            BIOME_FILLER_DEPTHS[biomeId] = bc.fillerDepth();
+        }
+    }
 
     @Override
     public SurfaceRules generateSurfaceRules(Heightmap heightmap, BiomeMap biomeMap) {
@@ -37,29 +86,22 @@ public final class BiomeDecorator implements SurfaceDecorator {
                 // Base biome id
                 short b = biomeMap.biomeIdAtUnchecked(wx, wz);
 
+                // ---- Geographic biomes: use their fixed palettes, skip climate blending ----
+                if (isGeographicBiome(b)) {
+                    top[i] = BIOME_TOP_BLOCKS[b];
+                    filler[i] = BIOME_FILLER_BLOCKS[b];
+                    depth[i] = (byte) BIOME_FILLER_DEPTHS[b];
+                    i++;
+                    continue;
+                }
+
                 // Your existing border nudge (keeps biome borders less jagged)
                 short majority = majorityBiome4(biomeMap, rect, wx, wz, b);
-                if (majority != b) {
+                if (majority != b && !isGeographicBiome(majority)) {
                     float r = GlobalTerrainUtils.hash01(905282311L, wx, wz);
                     b = (r < 0.70f) ? b : majority;
                 }
 
-                // ---- Beaches / underwater ----
-                // (ChunkBuilder will still do stronger shoreline rules; this keeps SurfaceRules sane.)
-                if (h <= EngineConfig.SEA_LEVEL - 1) {
-                    top[i] = Blocks.SAND;
-                    filler[i] = Blocks.SANDSTONE; // nice: sand->sandstone below even underwater
-                    depth[i] = 4;
-                    i++;
-                    continue;
-                }
-                if (h <= EngineConfig.SEA_LEVEL + EngineConfig.BIOME_BEACH_BAND) {
-                    top[i] = Blocks.SAND;
-                    filler[i] = Blocks.SAND;
-                    depth[i] = 4;
-                    i++;
-                    continue;
-                }
 
                 // ---- Base palette for biome ----
                 Palette self = paletteFor(b, h);
@@ -116,48 +158,38 @@ public final class BiomeDecorator implements SurfaceDecorator {
 
     // ---------------- helpers ----------------
 
+    /**
+     * Check if the biome is an ocean biome (geographic, not climate-driven).
+     */
+    private static boolean isGeographicBiome(short biome) {
+        return biome == EngineConfig.BIOME_OCEAN
+            || biome == EngineConfig.BIOME_DEEP_OCEAN;
+    }
+
     private record Palette(short top, short filler, int depth) {}
 
     private static Palette paletteFor(short biome, int heightY) {
-        // Desert: red sand + red sandstone foundation
-        if (biome == EngineConfig.BIOME_DESERT) {
-            return new Palette(Blocks.DESERT_SAND, Blocks.DESERT_SAND, 6);
-        }
-
-        // Savanna: dry grass
-        if (biome == EngineConfig.BIOME_SAVANNA) {
-            return new Palette(Blocks.DRY_GRASS, Blocks.DIRT, 4);
-        }
-
-        // Forest: regular green grass (like Minecraft oak/birch forests)
-        if (biome == EngineConfig.BIOME_FOREST) {
-            return new Palette(Blocks.GRASS, Blocks.DIRT, 4);
-        }
-
-        // Jungle: podzol gives that dense tropical floor debris look
-        if (biome == EngineConfig.BIOME_JUNGLE) {
-            return new Palette(Blocks.PODZOl_DIRT, Blocks.DIRT, 4);
-        }
-
-        // Swamp: regular grass (could add mud block if available)
-        if (biome == EngineConfig.BIOME_SWAMP) {
-            return new Palette(Blocks.GRASS, Blocks.DIRT, 5);
+        // Geographic biomes: use their fixed palettes
+        if (isGeographicBiome(biome)) {
+            return new Palette(BIOME_TOP_BLOCKS[biome], BIOME_FILLER_BLOCKS[biome], BIOME_FILLER_DEPTHS[biome]);
         }
 
         // Snow: use SNOW_GRASS at moderate altitudes, SNOW at higher altitudes
         if (biome == EngineConfig.BIOME_SNOW) {
-            // altitude threshold: tweak if needed
             int aboveSea = heightY - EngineConfig.SEA_LEVEL;
-            short top = (aboveSea >= 28) ? Blocks.SNOW : Blocks.SNOW_GRASS;
-            return new Palette(top, Blocks.DIRT, 4);
+            short topBlock = (aboveSea >= 28) ? Blocks.SNOW : BIOME_TOP_BLOCKS[biome];
+            return new Palette(topBlock, BIOME_FILLER_BLOCKS[biome], BIOME_FILLER_DEPTHS[biome]);
         }
 
-        // Plains: default green grass
-        return new Palette(Blocks.GRASS, Blocks.DIRT, 4);
+        // All other biomes: use JSON-loaded data
+        return new Palette(BIOME_TOP_BLOCKS[biome], BIOME_FILLER_BLOCKS[biome], BIOME_FILLER_DEPTHS[biome]);
     }
 
     private static float dominanceBias(short biome) {
         // Higher => keeps its own palette more strongly near borders
+        // Ocean biomes have high dominance to preserve their appearance
+        if (biome == EngineConfig.BIOME_OCEAN) return 0.95f;
+        if (biome == EngineConfig.BIOME_DEEP_OCEAN) return 0.95f;
         if (biome == EngineConfig.BIOME_DESERT) return 0.82f;
         if (biome == EngineConfig.BIOME_SNOW)   return 0.78f;
         if (biome == EngineConfig.BIOME_FOREST) return 0.70f;
@@ -175,6 +207,7 @@ public final class BiomeDecorator implements SurfaceDecorator {
     }
 
     private short dominantDifferentNeighbor(BiomeMap map, LayerRect rect, int wx, int wz, short self, int r) {
+        // Count climate biomes
         int cDes = 0;
         int cSnow = 0;
         int cFor = 0;
@@ -182,6 +215,9 @@ public final class BiomeDecorator implements SurfaceDecorator {
         int cPla = 0;
         int cSwp = 0;
         int cJun = 0;
+        // Count ocean biomes
+        int cOcean = 0;
+        int cDeepOcean = 0;
 
         for (int dz = -r; dz <= r; dz++) {
             for (int dx = -r; dx <= r; dx++) {
@@ -196,6 +232,8 @@ public final class BiomeDecorator implements SurfaceDecorator {
                     case EngineConfig.BIOME_SAVANNA -> cSav++;
                     case EngineConfig.BIOME_SWAMP -> cSwp++;
                     case EngineConfig.BIOME_JUNGLE -> cJun++;
+                    case EngineConfig.BIOME_OCEAN -> cOcean++;
+                    case EngineConfig.BIOME_DEEP_OCEAN -> cDeepOcean++;
                     default -> cPla++; // default bucket
                 }
             }
@@ -204,13 +242,17 @@ public final class BiomeDecorator implements SurfaceDecorator {
         short best = self;
         int bestC = 0;
 
+        // Climate biomes
         if (cDes > bestC) { bestC = cDes; best = EngineConfig.BIOME_DESERT; }
         if (cSnow > bestC) { bestC = cSnow; best = EngineConfig.BIOME_SNOW; }
         if (cFor > bestC) { bestC = cFor; best = EngineConfig.BIOME_FOREST; }
         if (cSav > bestC) { bestC = cSav; best = EngineConfig.BIOME_SAVANNA; }
         if (cSwp > bestC) { bestC = cSwp; best = EngineConfig.BIOME_SWAMP; }
         if (cPla > bestC) { bestC = cPla; best = EngineConfig.BIOME_PLAINS; }
-        if (cJun > bestC) { best = EngineConfig.BIOME_JUNGLE; }
+        if (cJun > bestC) { bestC = cJun; best = EngineConfig.BIOME_JUNGLE; }
+        // Ocean biomes
+        if (cOcean > bestC) { bestC = cOcean; best = EngineConfig.BIOME_OCEAN; }
+        if (cDeepOcean > bestC) { best = EngineConfig.BIOME_DEEP_OCEAN; }
 
         return best;
     }
