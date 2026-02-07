@@ -7,7 +7,6 @@ import org.aouessar.shared.EngineConfig;
  * Canonical coordinate transforms:
  * - world blocks <-> chunks
  * - chunks <-> regions
- *
  * Handles negative coordinates correctly using floorDiv/floorMod.
  */
 public final class WorldGrid {

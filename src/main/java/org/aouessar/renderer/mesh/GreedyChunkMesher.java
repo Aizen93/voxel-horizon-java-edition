@@ -532,14 +532,10 @@ public final class GreedyChunkMesher {
         return new GrowResult(v, i);
     }
 
-    private static boolean isBillboard(short blockId) {
-        return blockId == Blocks.BUSH; // extend later
-    }
-
     private static short sampleForGreedy(BlockAccessor accessor, int wx, int wy, int wz) {
         short id = accessor.blockAtWorld(wx, wy, wz);
         // Billboards are not voxel geometry: treat as AIR for greedy face generation
-        return isBillboard(id) ? Blocks.AIR : id;
+        return Blocks.isBillboard(id) ? Blocks.AIR : id;
     }
 
     private static void emitBillboards(
@@ -562,7 +558,7 @@ public final class GreedyChunkMesher {
 
                 for (int wy = EngineConfig.MIN_Y; wy < EngineConfig.MIN_Y + h; wy++) {
                     short id = accessor.blockAtWorld(wx, wy, wz);
-                    if (!isBillboard(id)) continue;
+                    if (!Blocks.isBillboard(id)) continue;
 
                     // Atlas tile (same mechanism as cubes)
                     Atlas.UvRect uv = atlas.uv(blockRenderMap.tileName(id, tileFace));

@@ -5,8 +5,6 @@ import org.aouessar.renderer.gl.IGlMesh;
 import org.aouessar.renderer.mesh.MeshData;
 import org.joml.FrustumIntersection;
 
-import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.Map;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -29,13 +27,13 @@ public final class ChunkMeshCache implements AutoCloseable {
     }
 
     private record Ready(long key, MeshData data) {}
-    private record DrawItem(IGlMesh mesh, float d2) {}
 
     private final ConcurrentHashMap<Long, Entry> entries = new ConcurrentHashMap<>();
     private final ConcurrentLinkedQueue<Ready> readyQueue = new ConcurrentLinkedQueue<>();
 
-    // Render thread only: reused list to avoid per-frame allocations in sorted draws
-    private final ArrayList<DrawItem> drawList = new ArrayList<>(1024);
+    // Reusable sort buffers for drawKeysSorted - avoids object allocations
+    private long[] sortKeys = new long[1024];
+    private float[] sortDist = new float[1024];
 
     private final ExecutorService executor;
     private final int maxInFlight;
@@ -47,14 +45,16 @@ public final class ChunkMeshCache implements AutoCloseable {
         this.maxInFlight = Math.max(1, maxInFlight);
         this.uploader = uploader;
 
-        this.executor = Executors.newFixedThreadPool(
-                Math.max(1, workerThreads),
-                r -> {
-                    Thread t = new Thread(r, "mesh-cpu");
-                    t.setDaemon(true);
-                    return t;
-                }
-        );
+        ThreadFactory threadFactory = r -> {
+            Thread t = new Thread(r, "mesh-cpu");
+            t.setDaemon(true);
+            t.setUncaughtExceptionHandler((thread, ex) ->
+                System.err.println("[" + thread.getName() + "] Uncaught exception: " + ex.getMessage())
+            );
+            return t;
+        };
+
+        this.executor = Executors.newFixedThreadPool(Math.max(1, workerThreads), threadFactory);
     }
 
     /** Good defaults (naive pipeline). */
@@ -71,12 +71,18 @@ public final class ChunkMeshCache implements AutoCloseable {
         return entries.size();
     }
 
-    public int entryCount() { return entries.size(); }
+    public int entryCount() {
+        return entries.size();
+    }
 
     public int meshCount() {
         int n = 0;
         for (Entry e : entries.values()) if (e.mesh != null) n++;
         return n;
+    }
+
+    public int readyCount() {
+        return readyQueue.size();
     }
 
     /**
@@ -131,6 +137,14 @@ public final class ChunkMeshCache implements AutoCloseable {
 
             it.remove();
         }
+
+        // Clean up stale items in readyQueue (chunks that were evicted before upload)
+        // This prevents MeshData from accumulating in memory
+        readyQueue.removeIf(r -> {
+            int cx = ChunkKey.unpackX(r.key());
+            int cz = ChunkKey.unpackZ(r.key());
+            return Math.abs(cx - centerCx) > keepRadiusChunks || Math.abs(cz - centerCz) > keepRadiusChunks;
+        });
     }
 
     private int trySubmit(int cx, int cz, int submitBudget, MeshBuilder builder) {
@@ -206,15 +220,23 @@ public final class ChunkMeshCache implements AutoCloseable {
      * - evictOutside() keeps them alive
      * - requestOne() can safely enqueue uploads for them
      * NOTE: This does not schedule builds; it only "touches" the cache geometry.
+     *
+     * Optimization: Only creates entries if they don't exist. For large radii,
+     * consider calling this less frequently or with a smaller radius.
      */
     public void touchRadius(int centerCx, int centerCz, int radiusChunks) {
+        // Only touch chunks that don't have entries yet
+        // This avoids unnecessary map operations for existing entries
         for (int dz = -radiusChunks; dz <= radiusChunks; dz++) {
             for (int dx = -radiusChunks; dx <= radiusChunks; dx++) {
                 int cx = centerCx + dx;
                 int cz = centerCz + dz;
 
                 long key = ChunkKey.pack(cx, cz);
-                entries.computeIfAbsent(key, k -> new Entry());
+                // putIfAbsent is more efficient than computeIfAbsent when entry likely exists
+                if (!entries.containsKey(key)) {
+                    entries.putIfAbsent(key, new Entry());
+                }
             }
         }
     }
@@ -330,14 +352,20 @@ public final class ChunkMeshCache implements AutoCloseable {
 
     /** Render thread only. Sorted translucent draw using only visible keys (far -> near). */
     public int drawKeysSorted(LongKeyList keys, float camChunkX, float camChunkZ) {
-        drawList.clear();
+        int count = 0;
 
+        // Ensure arrays are large enough
+        if (sortKeys.length < keys.size()) {
+            int newSize = Math.max(keys.size(), sortKeys.length * 2);
+            sortKeys = new long[newSize];
+            sortDist = new float[newSize];
+        }
+
+        // Collect keys with valid meshes and compute distances
         for (int i = 0; i < keys.size(); i++) {
             long key = keys.get(i);
             Entry e = entries.get(key);
-            if (e == null) continue;
-            IGlMesh m = e.mesh;
-            if (m == null) continue;
+            if (e == null || e.mesh == null) continue;
 
             int cx = ChunkKey.unpackX(key);
             int cz = ChunkKey.unpackZ(key);
@@ -346,17 +374,40 @@ public final class ChunkMeshCache implements AutoCloseable {
             float dz = (cz + 0.5f) - camChunkZ;
             float d2 = dx * dx + dz * dz;
 
-            drawList.add(new DrawItem(m, d2));
+            sortKeys[count] = key;
+            sortDist[count] = d2;
+            count++;
         }
 
-        if (drawList.size() <= 1) {
-            if (!drawList.isEmpty()) drawList.get(0).mesh.draw();
-            return drawList.size();
+        if (count == 0) return 0;
+        if (count == 1) {
+            Entry e = entries.get(sortKeys[0]);
+            if (e != null && e.mesh != null) e.mesh.draw();
+            return 1;
         }
 
-        drawList.sort(Comparator.comparingDouble(DrawItem::d2).reversed());
+        // Simple insertion sort (fast for small arrays, no allocations)
+        // Sort descending by distance (far to near)
+        for (int i = 1; i < count; i++) {
+            long keyI = sortKeys[i];
+            float distI = sortDist[i];
+            int j = i - 1;
+            while (j >= 0 && sortDist[j] < distI) {
+                sortKeys[j + 1] = sortKeys[j];
+                sortDist[j + 1] = sortDist[j];
+                j--;
+            }
+            sortKeys[j + 1] = keyI;
+            sortDist[j + 1] = distI;
+        }
 
-        for (DrawItem it : drawList) it.mesh.draw();
-        return drawList.size();
+        // Draw in sorted order
+        for (int i = 0; i < count; i++) {
+            Entry e = entries.get(sortKeys[i]);
+            if (e != null && e.mesh != null) {
+                e.mesh.draw();
+            }
+        }
+        return count;
     }
 }

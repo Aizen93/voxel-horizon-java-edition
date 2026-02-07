@@ -1,5 +1,9 @@
 package org.aouessar.renderer.camera;
 
+import org.aouessar.core.api.BiomeLocator;
+import org.aouessar.renderer.ui.BiomeTeleportDialog;
+import org.aouessar.renderer.ui.TeleportDialog;
+
 import static org.lwjgl.glfw.GLFW.*;
 
 public final class CameraController {
@@ -12,10 +16,15 @@ public final class CameraController {
 
     public float moveSpeed = 25f;
     public float mouseSensitivity = 0.0025f;
+    private final BiomeLocator biomeLocator;
 
-    public CameraController(Camera camera, long window) {
+    private boolean f9WasDown = false;
+    private boolean f10WasDown = false;
+
+    public CameraController(Camera camera, long window, BiomeLocator biomeLocator) {
         this.camera = camera;
         this.window = window;
+        this.biomeLocator = biomeLocator;
 
         glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
 
@@ -57,5 +66,39 @@ public final class CameraController {
 
         if (glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_PRESS) camera.position.y += spd;
         if (glfwGetKey(window, GLFW_KEY_LEFT_CONTROL) == GLFW_PRESS) camera.position.y -= spd;
+
+        boolean f9Down = glfwGetKey(window, GLFW_KEY_F9) == GLFW_PRESS;
+        if (f9Down && !f9WasDown) {
+            // Release mouse capture so you can click the Swing dialog
+            glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+            try {
+                TeleportDialog.prompt((int) camera.position.y).ifPresent(t ->
+                        camera.setPosition(t.x() + 0.5f, t.y(), t.z() + 0.5f)
+                );
+            } finally {
+                // Restore FPS mouse look
+                glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+
+                // Prevent a big camera jump on next mouse event
+                firstMouse = true;
+            }
+        }
+        f9WasDown = f9Down;
+        boolean f10Down = glfwGetKey(window, GLFW_KEY_F10) == GLFW_PRESS;
+        if (f10Down && !f10WasDown) {
+            glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+            try {
+                int sx = (int) camera.position.x;
+                int sz = (int) camera.position.z;
+
+                BiomeTeleportDialog.prompt(sx, sz, biomeLocator).ifPresent(t ->
+                        camera.setPosition(t.x() + 0.5f, t.y(), t.z() + 0.5f)
+                );
+            } finally {
+                glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+                firstMouse = true;
+            }
+        }
+        f10WasDown = f10Down;
     }
 }

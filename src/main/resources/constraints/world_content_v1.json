@@ -1,0 +1,272 @@
+{
+	"version": "1.0.0",
+	"biomes": {
+		"PLAINS": {
+			"surface_blocks": [
+				"GRASS",
+				"DIRT",
+				"GRAVEL"
+			],
+			"structures": {
+				"trees": {
+					"types": [
+						"OAK"
+					],
+					"density": 0.15,
+					"distribution": "SCATTERED",
+					"clustering": {
+						"enabled": false
+					},
+					"clearings": {
+						"enabled": true,
+						"average_radius": 8
+					}
+				},
+				"vegetation": {
+					"types": [
+						"TALL_GRASS",
+						"FLOWER_RED",
+						"FLOWER_YELLOW"
+					],
+					"density": 0.6,
+					"distribution": "UNIFORM",
+					"clustering": {
+						"enabled": false
+					}
+				}
+			}
+		},
+		"DESERT": {
+			"surface_blocks": [
+				"DESERT_SAND",
+				"DESERT_SAND_STONE"
+			],
+			"structures": {
+				"trees": {
+					"types": [
+						"CACTUS"
+					],
+					"density": 0.05,
+					"distribution": "SCATTERED",
+					"clustering": {
+						"enabled": true,
+						"cluster_size": [
+							2,
+							5
+						]
+					},
+					"clearings": {
+						"enabled": false
+					}
+				},
+				"vegetation": {
+					"types": [],
+					"density": 0.0,
+					"distribution": "NONE"
+				}
+			}
+		},
+		"SNOW": {
+			"surface_blocks": [
+				"SNOW_GRASS",
+				"SNOW",
+				"ICE",
+				"WATER"
+			],
+			"structures": {
+				"trees": {
+					"types": [
+						"SNOW_TREE"
+					],
+					"density": 0.12,
+					"distribution": "CLUSTERED",
+					"clustering": {
+						"enabled": true,
+						"cluster_size": [
+							3,
+							7
+						]
+					},
+					"clearings": {
+						"enabled": false
+					}
+				},
+				"vegetation": {
+					"types": [
+						"TALL_GRASS",
+						"FLOWER_CORNFLOWER"
+					],
+					"density": 0.12,
+					"distribution": "SCATTERED",
+					"clustering": {
+						"enabled": false
+					}
+				}
+			}
+		},
+		"FOREST": {
+			"surface_blocks": [
+				"DIRT"
+			],
+			"structures": {
+				"trees": {
+					"types": [
+						"SPRUCE"
+					],
+					"density": 0.45,
+					"distribution": "CLUSTERED",
+					"clustering": {
+						"enabled": true,
+						"cluster_size": [
+							5,
+							12
+						]
+					},
+					"clearings": {
+						"enabled": true,
+						"average_radius": 10
+					}
+				},
+				"vegetation": {
+					"types": [
+						"BERRY_BUSH",
+						"FLOWER_OXEYE_DAISY"
+					],
+					"density": 0.8,
+					"distribution": "PATCHY",
+					"clustering": {
+						"enabled": true,
+						"cluster_size": [
+							6,
+							15
+						]
+					}
+				}
+			}
+		},
+		"SAVANNA": {
+			"surface_blocks": [
+				"DRY_GRASS"
+			],
+			"structures": {
+				"trees": {
+					"types": [
+						"ACACIA"
+					],
+					"density": 0.18,
+					"distribution": "SCATTERED",
+					"clustering": {
+						"enabled": false
+					},
+					"clearings": {
+						"enabled": true,
+						"average_radius": 12
+					}
+				},
+				"vegetation": {
+					"types": [
+						"DRY_WHEAT",
+						"VINE"
+					],
+					"density": 0.4,
+					"distribution": "PATCHY",
+					"clustering": {
+						"enabled": true,
+						"cluster_size": [
+							4,
+							9
+						]
+					}
+				}
+			}
+		},
+		"SWAMP": {
+			"surface_blocks": [
+				"GRASS",
+				"DIRT",
+				"CLAY",
+				"GRAVEL",
+				"WATER"
+			],
+			"structures": {
+				"trees": {
+					"types": [
+						"OAK"
+					],
+					"density": 0.25,
+					"distribution": "CLUSTERED",
+					"clustering": {
+						"enabled": true,
+						"cluster_size": [
+							3,
+							6
+						]
+					},
+					"clearings": {
+						"enabled": false
+					}
+				},
+				"vegetation": {
+					"types": [
+						"BUSH",
+						"TALL_GRASS"
+					],
+					"density": 0.9,
+					"distribution": "UNIFORM",
+					"clustering": {
+						"enabled": false
+					}
+				}
+			}
+		},
+		"JUNGLE": {
+			"surface_blocks": [
+				"PODZOL_DIRT"
+			],
+			"structures": {
+				"trees": {
+					"types": [
+						"JUNGLE",
+						"MEGA_JUNGLE"
+					],
+					"density": 0.65,
+					"distribution": "CLUSTERED",
+					"clustering": {
+						"enabled": true,
+						"cluster_size": [
+							8,
+							16
+						]
+					},
+					"clearings": {
+						"enabled": false
+					}
+				},
+				"vegetation": {
+					"types": [
+						"BUSH",
+						"FLOWER_HOUSTONIA",
+						"FLOWER_RED_DOUBLE"
+					],
+					"density": 1.0,
+					"distribution": "PATCHY",
+					"clustering": {
+						"enabled": true,
+						"cluster_size": [
+							6,
+							20
+						]
+					}
+				}
+			}
+		}
+	},
+	"global_blocks": {
+		"BEDROCK": "bottom_of_world_only",
+		"DEEPSLATE": "deep_underground_only",
+		"STONE": "base_terrain_everywhere",
+		"WATER": "oceans_rivers_lakes",
+		"GRAVEL": "rivers_and_shores",
+		"CLAY": "swamp_bottoms_and_riverbeds"
+	}
+}

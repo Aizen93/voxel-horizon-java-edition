@@ -30,4 +30,8 @@ public final class Camera {
     public Vector3f rightDir() {
         return forwardDir().cross(0, 1, 0, new Vector3f()).normalize();
     }
+
+    public void setPosition(float x, float y, float z) {
+        this.position.set(x, y, z);
+    }
 }

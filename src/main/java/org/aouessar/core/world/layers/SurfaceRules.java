@@ -32,7 +32,15 @@ public final class SurfaceRules extends ArrayLayer2D {
         return fillerDepth[index(wx, wz)] & 0xFF;
     }
 
-    public short[] rawTop() { return topBlock; }
-    public short[] rawFiller() { return fillerBlock; }
-    public byte[] rawDepth() { return fillerDepth; }
+    public short[] rawTop() {
+        return topBlock;
+    }
+
+    public short[] rawFiller() {
+        return fillerBlock;
+    }
+
+    public byte[] rawDepth() {
+        return fillerDepth;
+    }
 }

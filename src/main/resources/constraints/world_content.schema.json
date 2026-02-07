@@ -1,0 +1,99 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "World Content Schema",
+  "type": "object",
+  "required": ["version", "biomes", "global_blocks"],
+
+  "properties": {
+    "version": {
+      "type": "string"
+    },
+
+    "biomes": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "required": ["surface_blocks", "structures"],
+
+        "properties": {
+          "surface_blocks": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+
+          "structures": {
+            "type": "object",
+            "required": ["trees", "vegetation"],
+
+            "properties": {
+              "trees": { "$ref": "#/$defs/structureRule" },
+              "vegetation": { "$ref": "#/$defs/structureRule" }
+            }
+          }
+        }
+      }
+    },
+
+    "global_blocks": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      }
+    }
+  },
+
+  "$defs": {
+    "structureRule": {
+      "type": "object",
+      "required": ["types", "density", "distribution"],
+
+      "properties": {
+        "types": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+
+        "density": {
+          "type": "number",
+          "minimum": 0.0,
+          "maximum": 1.0
+        },
+
+        "distribution": {
+          "type": "string",
+          "enum": ["NONE", "UNIFORM", "SCATTERED", "PATCHY", "CLUSTERED"]
+        },
+
+        "clustering": {
+          "type": "object",
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "cluster_size": {
+              "type": "array",
+              "items": { "type": "integer" },
+              "minItems": 2,
+              "maxItems": 2
+            }
+          },
+          "additionalProperties": false
+        },
+
+        "clearings": {
+          "type": "object",
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "average_radius": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+
+      "additionalProperties": false
+    }
+  },
+
+  "additionalProperties": false
+}

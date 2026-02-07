@@ -10,6 +10,13 @@ public final class FogCycle {
     private float startMul = 1.0f;
     private float rangeMul = 1.0f;
 
+    // Sky colors for reflections
+    private float skyTopR, skyTopG, skyTopB;
+    private float skyHorizonR, skyHorizonG, skyHorizonB;
+
+    // Sun direction (normalized)
+    private float sunDirX, sunDirY, sunDirZ;
+
     // Debug / hooks (set from renderer input)
     private float rain01; // 0..1
     private float mist01; // 0..1 (optional extra intensity)
@@ -22,6 +29,19 @@ public final class FogCycle {
     public float b() { return b; }
     public float startMul() { return startMul; }
     public float rangeMul() { return rangeMul; }
+
+    // Sky color getters for water reflections
+    public float skyTopR() { return skyTopR; }
+    public float skyTopG() { return skyTopG; }
+    public float skyTopB() { return skyTopB; }
+    public float skyHorizonR() { return skyHorizonR; }
+    public float skyHorizonG() { return skyHorizonG; }
+    public float skyHorizonB() { return skyHorizonB; }
+
+    // Sun direction getters
+    public float sunDirX() { return sunDirX; }
+    public float sunDirY() { return sunDirY; }
+    public float sunDirZ() { return sunDirZ; }
 
     private float twilight01; // 0..1
 
@@ -43,6 +63,19 @@ public final class FogCycle {
 
         // Sun height: -1..+1 (negative = night)
         float sunH = (float) Math.sin(angle);
+
+        // Sun direction vector (normalized) - sun moves east to west
+        float sunCosAngle = (float) Math.cos(angle);
+        this.sunDirX = sunCosAngle;  // sun moves along X axis
+        this.sunDirY = sunH;         // sun height
+        this.sunDirZ = 0.3f;         // slight tilt for visual interest
+        // Normalize the sun direction
+        float sunLen = (float) java.lang.Math.sqrt(sunDirX * sunDirX + sunDirY * sunDirY + sunDirZ * sunDirZ);
+        if (sunLen > 0.0001f) {
+            this.sunDirX /= sunLen;
+            this.sunDirY /= sunLen;
+            this.sunDirZ /= sunLen;
+        }
 
         // Day factor: 0..1 (0 night, 1 day) with smoother transition
         float day01 = sunH * 0.5f + 0.5f;
@@ -108,6 +141,36 @@ public final class FogCycle {
         this.b = Math.clamp(fb, 0f, 1f);
         this.startMul = sMul;
         this.rangeMul = rMul;
+
+        // ----- Sky colors for water reflections -----
+        // Sky top color: brighter blue during day, darker at night
+        this.skyTopR = Math.lerp(0.02f, 0.45f, day01);
+        this.skyTopG = Math.lerp(0.04f, 0.65f, day01);
+        this.skyTopB = Math.lerp(0.08f, 0.95f, day01);
+
+        // Apply twilight boost to sky (sunrise/sunset makes sky warmer)
+        float skyTwilightBoost = RendererConfig.SKY_TWILIGHT_BOOST;
+        this.skyTopR = Math.lerp(this.skyTopR, warmR * 0.8f, twilight * skyTwilightBoost);
+        this.skyTopG = Math.lerp(this.skyTopG, warmG * 0.9f, twilight * skyTwilightBoost);
+        this.skyTopB = Math.lerp(this.skyTopB, warmB * 0.7f, twilight * skyTwilightBoost);
+
+        // Horizon color: warmer, brighter near horizon
+        this.skyHorizonR = Math.lerp(0.05f, 0.75f, day01);
+        this.skyHorizonG = Math.lerp(0.06f, 0.85f, day01);
+        this.skyHorizonB = Math.lerp(0.10f, 0.95f, day01);
+
+        // During twilight, horizon becomes orange/red
+        this.skyHorizonR = Math.lerp(this.skyHorizonR, warmR, twilight);
+        this.skyHorizonG = Math.lerp(this.skyHorizonG, warmG, twilight);
+        this.skyHorizonB = Math.lerp(this.skyHorizonB, warmB, twilight);
+
+        // Clamp sky colors
+        this.skyTopR = Math.clamp(this.skyTopR, 0f, 1f);
+        this.skyTopG = Math.clamp(this.skyTopG, 0f, 1f);
+        this.skyTopB = Math.clamp(this.skyTopB, 0f, 1f);
+        this.skyHorizonR = Math.clamp(this.skyHorizonR, 0f, 1f);
+        this.skyHorizonG = Math.clamp(this.skyHorizonG, 0f, 1f);
+        this.skyHorizonB = Math.clamp(this.skyHorizonB, 0f, 1f);
     }
 
     /**

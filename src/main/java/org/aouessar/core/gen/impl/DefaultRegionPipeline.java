@@ -10,6 +10,7 @@ public final class DefaultRegionPipeline implements RegionPipeline {
     private final BiomeGenerator biomeGenerator;
     private final WorldCarver worldCarver;
     private final SurfaceDecorator surfaceDecorator;
+    private final WaterGenerator waterGenerator;
     private final StructureBuilder structureBuilder;
 
     public DefaultRegionPipeline(
@@ -17,12 +18,14 @@ public final class DefaultRegionPipeline implements RegionPipeline {
             BiomeGenerator biomeGenerator,
             WorldCarver worldCarver,
             SurfaceDecorator surfaceDecorator,
+            WaterGenerator waterGenerator,
             StructureBuilder structureBuilder
     ) {
         this.worldGenerator = worldGenerator;
         this.biomeGenerator = biomeGenerator;
         this.worldCarver = worldCarver;
         this.surfaceDecorator = surfaceDecorator;
+        this.waterGenerator = waterGenerator;
         this.structureBuilder = structureBuilder;
     }
 
@@ -32,7 +35,8 @@ public final class DefaultRegionPipeline implements RegionPipeline {
         var biomes = biomeGenerator.generateBiomes(seed, heightmap);
         var carve = worldCarver.generateCarveMask(seed, heightmap);
         var surface = surfaceDecorator.generateSurfaceRules(heightmap, biomes);
+        var water = waterGenerator.generateWaterLayer(seed, heightmap, carve);
         var structures = structureBuilder.placeStructures(seed, heightmap, biomes);
-        return new RegionLayers(heightmap, biomes, carve, surface, structures);
+        return new RegionLayers(heightmap, biomes, carve, surface, water, structures);
     }
 }

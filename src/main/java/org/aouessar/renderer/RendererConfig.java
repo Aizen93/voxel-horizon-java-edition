@@ -14,13 +14,13 @@ public final class RendererConfig {
     // SKY / FOG config
     //----------------------------------
     public static final float FOG_ALT_BASE  = 80f; //80f
-    public static final float FOG_ALT_RANGE = 200f; //400f
+    public static final float FOG_ALT_RANGE = 400f; //400f
 
-    public static final float FOG_START_LOW  = 360f; //1400f
-    public static final float FOG_START_HIGH = 260f; //700f
+    public static final float FOG_START_LOW  = 1400f; //1400f
+    public static final float FOG_START_HIGH = 700f; //700f
 
-    public static final float FOG_RANGE_LOW  = 520f; //3600f
-    public static final float FOG_RANGE_HIGH = 360f; //2200f
+    public static final float FOG_RANGE_LOW  = 3600f; //3600f
+    public static final float FOG_RANGE_HIGH = 2200f; //2200f
 
     // Fog cycle --> Weather
     public static final float DAY_LENGTH_SECONDS = 300f;
@@ -82,4 +82,13 @@ public final class RendererConfig {
     //----------------------------------
     public static final int SUBMIT_BUDGET_PER_FRAME = 64;
     public static final int UPLOAD_BUDGET_PER_FRAME = 128;
+
+    //----------------------------------
+    // Performance tuning
+    //----------------------------------
+    /** How often to run eviction (in frames). Higher = less CPU overhead but more memory */
+    public static final int EVICT_INTERVAL_FRAMES = 30;
+
+    /** Max in-flight mesh builds per cache */
+    public static final int MAX_IN_FLIGHT_MESHES = 128;
 }

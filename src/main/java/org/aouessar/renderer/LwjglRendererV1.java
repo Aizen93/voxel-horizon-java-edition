@@ -1,6 +1,6 @@
 package org.aouessar.renderer;
 
-import org.aouessar.core.api.ChunkProvider;
+import org.aouessar.core.api.WorldAccess;
 import org.aouessar.renderer.atlas.Atlas;
 import org.aouessar.renderer.atlas.AtlasLoader;
 import org.aouessar.renderer.camera.Camera;
@@ -9,6 +9,7 @@ import org.aouessar.renderer.gl.GlMeshTiled;
 import org.aouessar.renderer.gl.GlShaderProgram;
 import org.aouessar.renderer.gl.GlTexture2D;
 import org.aouessar.renderer.mesh.GreedyChunkMesher;
+import org.aouessar.renderer.ui.DebugOverlay;
 import org.aouessar.renderer.world.*;
 import org.aouessar.shared.EngineConfig;
 import org.joml.FrustumIntersection;
@@ -21,7 +22,7 @@ import static org.lwjgl.opengl.GL11.*;
 
 public final class LwjglRendererV1 {
 
-    private final ChunkProvider chunkProvider;
+    private final WorldAccess world;
     private final int radius; // view radius in chunks
 
     // Keep a little hysteresis to avoid eviction thrashing
@@ -29,8 +30,11 @@ public final class LwjglRendererV1 {
     private final FogCycle fogCycle = new FogCycle();
     private final LongKeyList visibleKeys = new LongKeyList(8192);
 
-    public LwjglRendererV1(ChunkProvider chunkProvider, int radius) {
-        this.chunkProvider = chunkProvider;
+    // Eviction throttling - don't evict every frame
+    private int evictCounter = 0;
+
+    public LwjglRendererV1(WorldAccess world, int radius) {
+        this.world = world;
         this.radius = radius;
         this.evictRadius = radius + 2;
     }
@@ -94,7 +98,13 @@ public final class LwjglRendererV1 {
         Atlas atlas = new AtlasLoader().loadFromResources(RendererConfig.ATLAS_JSON);
         BlockRenderMap brm = new BlockRenderMap();
 
+        // Debug HUD text: update once per second, render every frame
+        final StringBuilder debug = new StringBuilder(2048);
+
         try (
+                // NOW it's safe: OpenGL context + capabilities are live.
+                DebugOverlay hud = new DebugOverlay();
+
                 SkyRenderer sky = new SkyRenderer(RendererConfig.SKY_VERT, RendererConfig.SKY_FRAG);
 
                 GlShaderProgram shader = new GlShaderProgram(
@@ -113,17 +123,17 @@ public final class LwjglRendererV1 {
 
                 ChunkMeshCache opaqueCache = new ChunkMeshCache(
                         Math.max(1, Runtime.getRuntime().availableProcessors() - 1),
-                        128,
+                        RendererConfig.MAX_IN_FLIGHT_MESHES,
                         GlMeshTiled::new
                 );
                 ChunkMeshCache cutoutCache = new ChunkMeshCache(
                         Math.max(1, Runtime.getRuntime().availableProcessors() - 1),
-                        128,
+                        RendererConfig.MAX_IN_FLIGHT_MESHES,
                         GlMeshTiled::new
                 );
                 ChunkMeshCache translucentCache = new ChunkMeshCache(
                         Math.max(1, Runtime.getRuntime().availableProcessors() - 1),
-                        128,
+                        RendererConfig.MAX_IN_FLIGHT_MESHES,
                         GlMeshTiled::new
                 )
         ) {
@@ -133,7 +143,7 @@ public final class LwjglRendererV1 {
             setupShaderCommonUniforms(shaderTranslucent);
 
             Camera camera = new Camera();
-            CameraController controller = new CameraController(camera, window);
+            CameraController controller = new CameraController(camera, window, world.biomeLocator());
             GreedyChunkMesher mesher = new GreedyChunkMesher();
 
             double lastTime = glfwGetTime();
@@ -178,7 +188,7 @@ public final class LwjglRendererV1 {
                     radius,
                     RendererConfig.SUBMIT_BUDGET_PER_FRAME,
                     (mx, mz) -> {
-                        var meshes = mesher.buildChunkMeshes(chunkProvider, atlas, brm, mx, mz);
+                        var meshes = mesher.buildChunkMeshes(world.chunkProvider(), atlas, brm, mx, mz);
                         cutoutCache.requestOne(mx, mz, meshes.cutout());
                         translucentCache.requestOne(mx, mz, meshes.translucent());
                         return meshes.opaque();
@@ -212,8 +222,10 @@ public final class LwjglRendererV1 {
                 );
 
                 // -----------------------------
-                // DRAW
+                // MAIN PASS - DRAW to default framebuffer
                 // -----------------------------
+                sky.render(fogCycle);
+
                 atlasTex.bind(0);
 
                 // ---- PASS 1: OPAQUE ----
@@ -236,6 +248,14 @@ public final class LwjglRendererV1 {
                 applyPerFrameUniforms(shaderTranslucent, camera, mvp, fogCycle);
                 shaderTranslucent.setUniform1f("uTime", (float) now);
 
+                // Sky colors and sun direction for water reflections
+                shaderTranslucent.setUniform3f("uSkyTopColor",
+                        fogCycle.skyTopR(), fogCycle.skyTopG(), fogCycle.skyTopB());
+                shaderTranslucent.setUniform3f("uSkyHorizonColor",
+                        fogCycle.skyHorizonR(), fogCycle.skyHorizonG(), fogCycle.skyHorizonB());
+                shaderTranslucent.setUniform3f("uSunDir",
+                        fogCycle.sunDirX(), fogCycle.sunDirY(), fogCycle.sunDirZ());
+
                 float camChunkX = camera.position.x / EngineConfig.CHUNK_SIZE;
                 float camChunkZ = camera.position.z / EngineConfig.CHUNK_SIZE;
 
@@ -249,29 +269,72 @@ public final class LwjglRendererV1 {
                 glDepthMask(true);
 
                 // -----------------------------
-                // EVICT
+                // EVICT (throttled - not every frame)
                 // -----------------------------
-                opaqueCache.evictOutside(centerCx, centerCz, evictRadius);
-                cutoutCache.evictOutside(centerCx, centerCz, evictRadius);
-                translucentCache.evictOutside(centerCx, centerCz, evictRadius);
+                if (++evictCounter >= RendererConfig.EVICT_INTERVAL_FRAMES) {
+                    evictCounter = 0;
+                    opaqueCache.evictOutside(centerCx, centerCz, evictRadius);
+                    cutoutCache.evictOutside(centerCx, centerCz, evictRadius);
+                    translucentCache.evictOutside(centerCx, centerCz, evictRadius);
+
+                    // Evict core data (regions + chunks) to prevent memory leaks
+                    if (world.streamingControl() != null) {
+                        world.streamingControl().evictOutside(centerCx, centerCz, evictRadius + 4);
+                    }
+                }
 
                 // -----------------------------
-                // FPS
+                // HUD text (update once/sec)
                 // -----------------------------
                 acc += dt;
                 frames++;
                 if (acc >= 1.0) {
-                    glfwSetWindowTitle(window,
-                    "Voxel Renderer v1 (r = " + radius +
-                        ", FPS: " + frames +
-                        ", opaque: [Drawn=" + drawnOpaque + ", Count=" + opaqueCache.meshCount() + "]" +
-                        ", cutout: [Drawn=" + drawnCutout + ", Count=" + cutoutCache.meshCount() + "]" +
-                        ", trans: [Drawn=" + drawnTrans + ", Count=" + translucentCache.meshCount() + "]" +
-                        ", inFlight = " + (opaqueCache.inFlightCount() + cutoutCache.inFlightCount() + translucentCache.inFlightCount()) + ")"
-                    );
+                    debug.setLength(0);
+
+                    debug.append("FPS: ").append(frames).append('\n');
+                    debug.append("radius: ").append(radius).append('\n');
+
+                    debug.append("Opaque:  D=").append(drawnOpaque)
+                            .append(" M=").append(opaqueCache.meshCount())
+                            .append(" E=").append(opaqueCache.entryCount())
+                            .append(" R=").append(opaqueCache.readyCount())
+                            .append(" F=").append(opaqueCache.inFlightCount()).append('\n');
+
+                    debug.append("Cutout:  D=").append(drawnCutout)
+                            .append(" M=").append(cutoutCache.meshCount())
+                            .append(" E=").append(cutoutCache.entryCount())
+                            .append(" R=").append(cutoutCache.readyCount())
+                            .append(" F=").append(cutoutCache.inFlightCount()).append('\n');
+
+                    debug.append("Trans:   D=").append(drawnTrans)
+                            .append(" M=").append(translucentCache.meshCount())
+                            .append(" E=").append(translucentCache.entryCount())
+                            .append(" R=").append(translucentCache.readyCount())
+                            .append(" F=").append(translucentCache.inFlightCount()).append('\n');
+
+                    // Core cache stats
+                    if (world.streamingControl() != null) {
+                        debug.append("Core:    Regions=").append(world.streamingControl().regionCount())
+                                .append(" Chunks=").append(world.streamingControl().chunkCount()).append('\n');
+                    }
+
+                    long usedMb = (Runtime.getRuntime().totalMemory() - Runtime.getRuntime().freeMemory()) / (1024 * 1024);
+                    long totalMb = Runtime.getRuntime().totalMemory() / (1024 * 1024);
+                    debug.append("Heap: ").append(usedMb).append(" / ").append(totalMb).append(" MB\n");
+
+                    debug.append("Pos: ")
+                            .append(camera.position.x).append(", ")
+                            .append(camera.position.y).append(", ")
+                            .append(camera.position.z).append('\n');
+
                     acc = 0.0;
                     frames = 0;
                 }
+
+                // -----------------------------
+                // HUD render (every frame)
+                // -----------------------------
+                hud.render(fbW[0], fbH[0], 8f, 8f, debug.toString());
 
                 glfwSwapBuffers(window);
             }
