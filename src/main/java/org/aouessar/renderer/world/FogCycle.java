@@ -1,7 +1,7 @@
 package org.aouessar.renderer.world;
 
 import org.aouessar.renderer.RendererConfig;
-import org.joml.Math;
+import org.joml.Math; // NB: JOML's clamp is (min, max, value) — NOT (value, min, max)
 
 public final class FogCycle {
 
@@ -17,12 +17,20 @@ public final class FogCycle {
     // Sun direction (normalized)
     private float sunDirX, sunDirY, sunDirZ;
 
+    // Sunlight color x intensity: multiplies all world shading, so the terrain
+    // follows the day cycle (bright day, orange twilight, blue moonlight).
+    private float lightR, lightG, lightB;
+
+    public float lightR() { return lightR; }
+    public float lightG() { return lightG; }
+    public float lightB() { return lightB; }
+
     // Debug / hooks (set from renderer input)
     private float rain01; // 0..1
     private float mist01; // 0..1 (optional extra intensity)
 
-    public void setRain01(float v) { this.rain01 = Math.clamp(v, 0.0f, 1.0f); }
-    public void setMist01(float v) { this.mist01 = Math.clamp(v, 0.0f, 1.0f); }
+    public void setRain01(float v) { this.rain01 = Math.clamp(0.0f, 1.0f, v); }
+    public void setMist01(float v) { this.mist01 = Math.clamp(0.0f, 1.0f, v); }
 
     public float r() { return r; }
     public float g() { return g; }
@@ -44,9 +52,14 @@ public final class FogCycle {
     public float sunDirZ() { return sunDirZ; }
 
     private float twilight01; // 0..1
+    private float day01;      // 0 = night, 1 = full day
 
     public float twilight01() {
         return twilight01;
+    }
+
+    public float day01() {
+        return day01;
     }
 
     /**
@@ -79,8 +92,9 @@ public final class FogCycle {
 
         // Day factor: 0..1 (0 night, 1 day) with smoother transition
         float day01 = sunH * 0.5f + 0.5f;
-        day01 = Math.clamp(day01, 0.0f, 1.0f);
+        day01 = Math.clamp(0.0f, 1.0f, day01);
         day01 = day01 * day01 * (3.0f - 2.0f * day01); // smoothstep
+        this.day01 = day01;
 
         // Base fog color (night <-> day)
         float fr = Math.lerp(RendererConfig.FOG_NIGHT_R, RendererConfig.FOG_DAY_R, day01);
@@ -92,13 +106,13 @@ public final class FogCycle {
 
         // 1 at horizon, 0 away from horizon (works symmetrically for sunrise/sunset)
         float twilight = 1.0f - (Math.abs(sunH) / width);
-        twilight = Math.clamp(twilight, 0.0f, 1.0f);
+        twilight = Math.clamp(0.0f, 1.0f, twilight);
         twilight = twilight * twilight * (3.0f - 2.0f * twilight); // smoothstep
 
         // Apply strength
         twilight *= RendererConfig.FOG_WARM_STRENGTH;
-        twilight = Math.clamp(twilight, 0.0f, 1.0f);
-        this.twilight01 = Math.clamp(twilight / Math.max(0.0001f, RendererConfig.FOG_WARM_STRENGTH), 0.0f, 1.0f);
+        twilight = Math.clamp(0.0f, 1.0f, twilight);
+        this.twilight01 = Math.clamp(0.0f, 1.0f, twilight / Math.max(0.0001f, RendererConfig.FOG_WARM_STRENGTH));
 
         // Warm target (strong orange haze) — you can keep config, but these values WORK visually
         float warmR = RendererConfig.FOG_WARM_R;
@@ -117,14 +131,14 @@ public final class FogCycle {
         fb += glow * 0.25f;
 
         // Clamp final
-        fr = Math.clamp(fr, 0.0f, 1.0f);
-        fg = Math.clamp(fg, 0.0f, 1.0f);
-        fb = Math.clamp(fb, 0.0f, 1.0f);
+        fr = Math.clamp(0.0f, 1.0f, fr);
+        fg = Math.clamp(0.0f, 1.0f, fg);
+        fb = Math.clamp(0.0f, 1.0f, fb);
 
         // ----- Weather hooks -----
-        float rain = Math.clamp(rain01, 0.0f, 1.0f);
+        float rain = Math.clamp(0.0f, 1.0f, rain01);
         float valley = valleyMistFromAltitude(cameraY);
-        float mist = Math.clamp(valley * Math.clamp(mist01, 0.0f, 1.0f), 0.0f, 1.0f);
+        float mist = Math.clamp(0.0f, 1.0f, valley * Math.clamp(0.0f, 1.0f, mist01));
 
         float sMul = 1.0f;
         float rMul = 1.0f;
@@ -136,9 +150,9 @@ public final class FogCycle {
         rMul *= Math.lerp(1.0f, RendererConfig.MIST_FOG_RANGE_MUL, mist);
 
         // outputs
-        this.r = Math.clamp(fr, 0f, 1f);
-        this.g = Math.clamp(fg, 0f, 1f);
-        this.b = Math.clamp(fb, 0f, 1f);
+        this.r = Math.clamp(0f, 1f, fr);
+        this.g = Math.clamp(0f, 1f, fg);
+        this.b = Math.clamp(0f, 1f, fb);
         this.startMul = sMul;
         this.rangeMul = rMul;
 
@@ -165,12 +179,35 @@ public final class FogCycle {
         this.skyHorizonB = Math.lerp(this.skyHorizonB, warmB, twilight);
 
         // Clamp sky colors
-        this.skyTopR = Math.clamp(this.skyTopR, 0f, 1f);
-        this.skyTopG = Math.clamp(this.skyTopG, 0f, 1f);
-        this.skyTopB = Math.clamp(this.skyTopB, 0f, 1f);
-        this.skyHorizonR = Math.clamp(this.skyHorizonR, 0f, 1f);
-        this.skyHorizonG = Math.clamp(this.skyHorizonG, 0f, 1f);
-        this.skyHorizonB = Math.clamp(this.skyHorizonB, 0f, 1f);
+        this.skyTopR = Math.clamp(0f, 1f, this.skyTopR);
+        this.skyTopG = Math.clamp(0f, 1f, this.skyTopG);
+        this.skyTopB = Math.clamp(0f, 1f, this.skyTopB);
+        this.skyHorizonR = Math.clamp(0f, 1f, this.skyHorizonR);
+        this.skyHorizonG = Math.clamp(0f, 1f, this.skyHorizonG);
+        this.skyHorizonB = Math.clamp(0f, 1f, this.skyHorizonB);
+
+        // ----- Terrain sunlight (intensity + color through the cycle) -----
+        // Intensity: full sun once it clears the horizon haze, easing down to
+        // a moonlight floor at night (dark, but the world stays readable).
+        float sunT = Math.clamp(0f, 1f, (sunH + 0.08f) / 0.33f);
+        sunT = sunT * sunT * (3f - 2f * sunT);
+        float level = Math.lerp(RendererConfig.NIGHT_LIGHT_FLOOR, 1.0f, sunT);
+
+        // Color: white by day, warm at sunrise/sunset, cool blue under the moon
+        float lr = 1f, lg = 1f, lb = 1f;
+        float warmCast = twilight * RendererConfig.TWILIGHT_SUNLIGHT_TINT;
+        lr = Math.lerp(lr, 1.00f, warmCast);
+        lg = Math.lerp(lg, 0.60f, warmCast);
+        lb = Math.lerp(lb, 0.34f, warmCast);
+
+        float night = 1f - sunT;
+        lr = Math.lerp(lr, 0.62f, night);
+        lg = Math.lerp(lg, 0.72f, night);
+        lb = Math.lerp(lb, 1.00f, night);
+
+        this.lightR = lr * level;
+        this.lightG = lg * level;
+        this.lightB = lb * level;
     }
 
     /**
@@ -179,7 +216,7 @@ public final class FogCycle {
      */
     public static float valleyMistFromAltitude(float y) {
         float t = (y - 50.0f) / 80.0f; // y=50 -> 0, y=130 -> 1
-        t = Math.clamp(t, 0.0f, 1.0f);
+        t = Math.clamp(0.0f, 1.0f, t);
         return 1.0f - t;
     }
 }

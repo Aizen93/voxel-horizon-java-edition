@@ -1,6 +1,6 @@
 package org.aouessar.renderer.camera;
 
-import org.aouessar.core.api.BiomeLocator;
+import org.aouessar.core.api.WorldAccess;
 import org.aouessar.renderer.ui.BiomeTeleportDialog;
 import org.aouessar.renderer.ui.TeleportDialog;
 
@@ -16,15 +16,15 @@ public final class CameraController {
 
     public float moveSpeed = 25f;
     public float mouseSensitivity = 0.0025f;
-    private final BiomeLocator biomeLocator;
+    private final WorldAccess world;
 
     private boolean f9WasDown = false;
     private boolean f10WasDown = false;
 
-    public CameraController(Camera camera, long window, BiomeLocator biomeLocator) {
+    public CameraController(Camera camera, long window, WorldAccess world) {
         this.camera = camera;
         this.window = window;
-        this.biomeLocator = biomeLocator;
+        this.world = world;
 
         glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
 
@@ -91,7 +91,7 @@ public final class CameraController {
                 int sx = (int) camera.position.x;
                 int sz = (int) camera.position.z;
 
-                BiomeTeleportDialog.prompt(sx, sz, biomeLocator).ifPresent(t ->
+                BiomeTeleportDialog.prompt(sx, sz, world.biomeLocator(), world.worldSampler()).ifPresent(t ->
                         camera.setPosition(t.x() + 0.5f, t.y(), t.z() + 0.5f)
                 );
             } finally {

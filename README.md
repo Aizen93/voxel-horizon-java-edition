@@ -1,15 +1,15 @@
 # Minecraft-Like Voxel Engine — Clean Architecture Bootstrap Prompt (Streaming-Ready)
 
-I want to start a **new Java 21 project using LWJGL** to build a **Minecraft-like voxel engine with a Distant Horizons look**, but this time with a **correct, production-grade architecture from day one**.
+This is a **Java 21 project using LWJGL** building a **Minecraft-like voxel engine with a Distant Horizons look**, with a **correct, production-grade architecture**.
 
-The world must be **infinite in coordinates**, **streamed**, and **deterministic**.
-No part of the system should rely on a single global “world window”.
+The world must is **infinite in coordinates**, **streamed**, and **deterministic**.
+No part of the system rely on a single global “world window”.
 
-The engine must be designed as a **data-pipeline + streaming system** where:
+The engine is designed as a **data-pipeline + streaming system** where:
 - All generation is **pure and deterministic**
 - All data is generated **per region (paged)** and cached
 - The renderer can request **any chunk at any time**
-- The core must always be able to answer without throwing bounds exceptions
+- The core is always able to answer without throwing bounds exceptions
 
 ---
 
@@ -22,7 +22,7 @@ The engine must be designed as a **data-pipeline + streaming system** where:
 - Region-based streaming (like Minecraft / Distant Horizons)
 - Deterministic generation (seed + coordinates only)
 - Far-field LOD friendly
-- UE5-friendly (world data must be serializable, streamable, and engine-agnostic)
+- UE5-friendly (world data is serializable, streamable, and engine-agnostic)
 - **NO OpenGL / LWJGL code outside the renderer module**
 - **Renderer must never know about generation windows, rects, or caching**
 - **Core must never throw “out of bounds” during normal gameplay**
@@ -295,6 +295,34 @@ These must be used but must not dictate architecture.
 I want to start this project the right way so it can scale to a real Minecraft-like engine with distant horizons.
 
 
+---
+## Far-Field LOD (Distant Horizons) — implemented
+
+The engine now renders a Distant Horizons-style far field on top of the near-field
+voxel chunks:
+
+- **View distance: 4096 blocks** (256 chunks) by default — `RendererConfig.LOD_VIEW_TILES`
+- Core exposes `LodProvider.sampleTile(tileX, tileZ, step)` returning immutable,
+  engine-agnostic `LodTile`s (heights / water / top blocks), computed **directly from
+  the deterministic column functions** — no region builds, no cache pressure
+- Far-field heights are **byte-identical** to near-field chunks (shared
+  `TerrainColumnSampler` / `ClimateColumnSampler` / `RiverColumnSampler`,
+  verified by `LodConsistencyTest`)
+- Renderer builds vertex-colored heightfield meshes per tile (colors averaged from the
+  real texture atlas, canopy tinting for forests), with LOD rings 4/8/16/32 blocks per
+  sample, edge skirts, sky-reflective far water, and in-shader cutout under the near field
+
+Rivers are now connected meandering channels with shaped profiles, and tree placement
+honors the JSON `distribution` / `clustering` / `clearings` config (groves + meadows).
+
+---
+### Shortcuts
+```markdown
+    F2  : Take a screenshot.
+    F9  : Teleport to the specified coordinates - Separated by space - X Y Z and if you don't specify a Z coordinate, your current Z is kept.
+    F10 : Teleport to the nearest biome of your choosing.
+```
+
 --- 
 ## 2D Viewer Screenshot:
 To run 2D Viewer :
@@ -309,4 +337,6 @@ To run the 3D World :
 ```markdown
     .\gradlew.bat run
 ```
-![screenshot_3d_lwjgl.png](screenshot_3d_lwjgl.png)
+![screenshot_3d_lwjgl_day.png](screenshot_3d_lwjgl_day.png)
+![screenshot_3d_lwjgl_night.png](screenshot_3d_lwjgl_night.png)
+![screenshot_3d_lwjgl_underwater.png](screenshot_3d_lwjgl_underwater.png)

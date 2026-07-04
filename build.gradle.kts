@@ -79,6 +79,14 @@ tasks.withType<JavaExec>().configureEach {
 
     // Optional but helpful: force UTF-8
     systemProperty("file.encoding", "UTF-8")
+
+    // Forward -Pvoxel.* project properties to the app as -Dvoxel.* system
+    // properties (camera spawn, auto-screenshot debug hooks, ...)
+    project.properties.forEach { (key, value) ->
+        if (key.startsWith("voxel.") && value != null) {
+            systemProperty(key, value.toString())
+        }
+    }
 }
 
 // Task to run the 2D Biome Map Viewer

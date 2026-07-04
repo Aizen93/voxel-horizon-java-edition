@@ -108,6 +108,7 @@ application-local.properties
 # Test & coverage
 # =========================
 coverage/
+screenshots/
 *.exec
 *.ec
 

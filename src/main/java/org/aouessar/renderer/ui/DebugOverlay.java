@@ -33,6 +33,7 @@ public final class DebugOverlay implements AutoCloseable {
 
     private final ByteBuffer vertexBuffer; // direct, reused
     private final ByteBuffer whiteColor = MemoryUtil.memAlloc(4);
+    private final ByteBuffer bgVertexBuffer = MemoryUtil.memAlloc(12 * Float.BYTES); // direct, reused
 
     private boolean enabled = true;
     private boolean showBackground = true;
@@ -199,13 +200,12 @@ public final class DebugOverlay implements AutoCloseable {
         glBindVertexArray(bgVao);
         glBindBuffer(GL_ARRAY_BUFFER, bgVbo);
 
-        // Upload floats without allocations (use a temp direct buffer)
-        ByteBuffer tmp = MemoryUtil.memAlloc(verts.length * Float.BYTES);
-        for (float v : verts) tmp.putFloat(v);
-        tmp.flip();
+        // Upload floats without allocations (reuse the persistent direct buffer)
+        bgVertexBuffer.clear();
+        for (float v : verts) bgVertexBuffer.putFloat(v);
+        bgVertexBuffer.flip();
 
-        glBufferSubData(GL_ARRAY_BUFFER, 0, tmp);
-        MemoryUtil.memFree(tmp);
+        glBufferSubData(GL_ARRAY_BUFFER, 0, bgVertexBuffer);
 
         glDrawArrays(GL_TRIANGLES, 0, 6);
 
@@ -227,6 +227,7 @@ public final class DebugOverlay implements AutoCloseable {
 
         MemoryUtil.memFree(vertexBuffer);
         MemoryUtil.memFree(whiteColor);
+        MemoryUtil.memFree(bgVertexBuffer);
     }
 
     private static int compileProgram(String vsSrc, String fsSrc) {

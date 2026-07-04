@@ -23,6 +23,7 @@ public final class BlockAccessor {
         int lz = Math.floorMod(wz, cs);
 
         Chunk c = provider.getChunk(cx, cz);
+        if (c == null) return Blocks.AIR;
         short[] raw = c.raw();
         return raw[index(cs, h, lx, wy, lz)];
     }

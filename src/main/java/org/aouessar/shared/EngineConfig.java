@@ -4,6 +4,15 @@ public final class EngineConfig {
     private EngineConfig() {}
 
     // -----------------------------
+    // World identity
+    // -----------------------------
+    // Single source of truth for the default world seed.
+    // Main, BiomeMapViewer and every generator must derive from this
+    // (previously Main and the 2D viewer used different hardcoded seeds
+    // and showed two different worlds).
+    public static final long WORLD_SEED = 905282311L;
+
+    // -----------------------------
     // World geometry (Minecraft-style)
     // -----------------------------
     public static final int CHUNK_SIZE = 16;
@@ -187,8 +196,19 @@ public final class EngineConfig {
     public static final int OCEAN_CLAY_CHANCE_PER_256 = 40;    // ~15%
     public static final int OCEAN_GRAVEL_CHANCE_PER_256 = 90;  // ~35%
 
-    // River carving depth and riverbed thickness
-    public static final int RIVER_CARVE_DEPTH = 3;
+    // ---- Rivers (sea-level valleys carved into the terrain function) ----
+    // Channels follow zero-contours of a domain-warped noise field. The
+    // terrain blends down toward sea level across the valley, so river water
+    // always sits AT sea level (vanilla Minecraft style) — never on slopes.
+    public static final float RIVER_FREQ = 1.0f / 1400.0f;       // river line spacing
+    public static final float RIVER_WARP_FREQ = 1.0f / 600.0f;   // meander scale
+    public static final float RIVER_WARP_AMP_BLOCKS = 60.0f;     // meander strength
+    public static final float RIVER_VALLEY_WIDTH = 0.085f;       // valley extent in noise units
+    public static final float RIVER_CHANNEL_START = 0.55f;       // valley fraction where water begins
+    public static final float RIVER_BANK_HEIGHT = 1.5f;          // bank target above sea
+    public static final float RIVER_BED_DEPTH = 3.0f;            // bed target below sea (center line)
+    public static final int RIVER_LOWLAND_FULL = 8;              // full valleys below sea + this
+    public static final int RIVER_MAX_ELEVATION_ABOVE_SEA = 60;  // valleys fade out above this
     public static final int RIVERBED_THICKNESS = 2;
 
     // ===============================================================================

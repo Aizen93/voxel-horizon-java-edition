@@ -1,13 +1,14 @@
 #version 330 core
-out vec2 vUv;
 
-// Fullscreen triangle using gl_VertexID (no VBO needed)
+// Fullscreen triangle from gl_VertexID; passes NDC coords so the fragment
+// shader can reconstruct a per-pixel world-space view ray.
+out vec2 vNdc;
+
 void main() {
-    vec2 pos;
-    if (gl_VertexID == 0) pos = vec2(-1.0, -1.0);
-    else if (gl_VertexID == 1) pos = vec2( 3.0, -1.0);
-    else pos = vec2(-1.0,  3.0);
-
-    vUv = pos * 0.5 + 0.5; // maps to [0..1] (some values >1, that’s fine)
-    gl_Position = vec4(pos, 0.0, 1.0);
+    vec2 p = vec2(
+        (gl_VertexID == 1) ? 3.0 : -1.0,
+        (gl_VertexID == 2) ? 3.0 : -1.0
+    );
+    vNdc = p;
+    gl_Position = vec4(p, 0.9999, 1.0);
 }

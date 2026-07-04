@@ -34,7 +34,7 @@ public final class DefaultRegionPipeline implements RegionPipeline {
         var heightmap = worldGenerator.generateHeightmap(seed, rect);
         var biomes = biomeGenerator.generateBiomes(seed, heightmap);
         var carve = worldCarver.generateCarveMask(seed, heightmap);
-        var surface = surfaceDecorator.generateSurfaceRules(heightmap, biomes);
+        var surface = surfaceDecorator.generateSurfaceRules(seed, heightmap, biomes);
         var water = waterGenerator.generateWaterLayer(seed, heightmap, carve);
         var structures = structureBuilder.placeStructures(seed, heightmap, biomes);
         return new RegionLayers(heightmap, biomes, carve, surface, water, structures);

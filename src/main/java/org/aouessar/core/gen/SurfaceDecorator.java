@@ -5,5 +5,5 @@ import org.aouessar.core.world.layers.Heightmap;
 import org.aouessar.core.world.layers.SurfaceRules;
 
 public interface SurfaceDecorator {
-    SurfaceRules generateSurfaceRules(Heightmap heightmap, BiomeMap biomeMap);
+    SurfaceRules generateSurfaceRules(long seed, Heightmap heightmap, BiomeMap biomeMap);
 }

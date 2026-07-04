@@ -4,5 +4,6 @@ public record WorldAccess(
         ChunkProvider chunkProvider,
         WorldSampler worldSampler,
         BiomeLocator biomeLocator,
-        StreamingControl streamingControl
+        StreamingControl streamingControl,
+        LodProvider lodProvider
 ) {}

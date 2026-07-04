@@ -36,6 +36,133 @@ The engine is a **data-pipeline + streaming system**, not a fixed world window.
 
 ---
 
+## Current State (July 2026 cleanup & LOD pass)
+
+**Shipped in this pass:**
+- **Far-field LOD (Distant Horizons)**: `LodProvider`/`LodTile` core API + ring-based
+  LOD renderer. View distance is now **4096 blocks** (= 256 chunks) by default
+  (`RendererConfig.LOD_VIEW_TILES`), rendered at 1000+ FPS. Far heights are
+  byte-identical to near chunks (shared column samplers, pinned by `LodConsistencyTest`).
+- **Rivers v2**: connected meandering channels (domain-warped zero-contour field) with
+  intensity-shaped profiles (shallow banks, deep center), water filling to 1 below the
+  banks along the whole course, elevation fade above sea+60. Visible in the far field too.
+- **Tree distribution**: JSON `distribution`/`clustering`/`clearings` are now honored —
+  CLUSTERED groves, PATCHY thickets, tree-free meadow clearings (vegetation unaffected).
+- **Bug fixes**: unified `EngineConfig.WORLD_SEED` (2D viewer showed a *different world*
+  before), seeded ecotone noise per world, frustum-culling Y-range (mountain tops above
+  world Y ~255 no longer vanish), billboard Y iteration (missing high-altitude vegetation),
+  MeshData stride, swamp ocean-distance region seam, NPE guard in BlockAccessor,
+  duplicate sky render, dead code removal (ChunkMesher, GlMesh).
+
+**Renderer defaults**: near field radius 16 chunks (full voxel detail) + LOD rings to 16
+tiles (innermost ring at 2-block sampling, flat-shaded for a blocky far look). Fog tuned
+so the world edge is always fully fogged before it ends.
+
+**Rivers v3**: river valleys are carved directly inside `TerrainColumnSampler` — water is
+ALWAYS at sea level (vanilla style). No more water climbing hills, no stepped terraces,
+no snow/ice beside elevated channels; valleys fade into dry gullies above sea+60.
+
+**Image quality**: atlas mipmaps (max level 4) + `textureGrad` sampling (no seam lines on
+greedy quads) + anisotropic filtering (8x) + 4x MSAA.
+
+**Near→far transition**: dithered dissolve band (`NEAR_FADE_BAND_BLOCKS`) — the voxel
+world melts pixel-by-pixel into the LOD over the last ~44 blocks of the near radius,
+with the LOD already drawn underneath. Euclidean cut, so the horizon ring is circular.
+
+**Lighting** (chunk vertex stride is now 8 floats: ... + shade):
+- Per-vertex ambient occlusion (Minecraft "smooth lighting"; AO is part of the greedy
+  merge key so merged quads keep correct corners)
+- Skylight via per-column light-ceiling scan — soft shadows under tree canopies and
+  overhangs (water passes light; leaves block it)
+- Directional sun shadow map over the near field: 2048px depth texture, hardware-PCF
+  3x3, texel-snapped ortho, leaves cast alpha-tested shadows, fades out at dusk/night.
+  Toggle + knobs: `RendererConfig.SHADOWS_ENABLED / SHADOW_MAP_SIZE / SHADOW_EXTENT_BLOCKS
+  / SHADOW_STRENGTH`. Measured cost: ~15% at 1100+ FPS.
+- Blocklight (torches etc.) intentionally deferred until there are light-emitting blocks.
+
+**Water v2 / sky v2** (reference: Minecraft shader-pack look):
+- Water surfaces carry their column depth in the vertex shade channel: shallow water is
+  clear teal (bed visible through it), deep water darkens toward navy and turns opaque;
+  animated shore foam on the shallowest band; brighter sun-glitter path. LOD ocean gets
+  animated swell + the same glitter so the horizon sparkles.
+- Sky is now view-directional (per-pixel ray from inverse proj/view): gradient, visible
+  sun disc + glow that tracks the FogCycle sun (matches shadows), twilight warm band
+  toward the sun, and an animated procedural FBM cloud deck with cheap self-shadowing
+  (lit tops / dark bottoms), wind drift, distance fade. Knobs: `RendererConfig.CLOUD_COVER`,
+  `CLOUD_HEIGHT`.
+**Water v3 + HDR post pipeline** (reference: Bliss shader pack):
+- The frame now renders into an offscreen 4x MSAA RGBA16F HDR target (`PostProcessor`).
+  After the opaque+cutout passes, the scene is resolved to color + depth textures so the
+  water shader can sample the world *behind* the surface:
+  - **Refraction**: screen-space refraction with a depth guard — the riverbed/seabed is
+    visible through the water and wobbles with the waves.
+  - **Absorption**: Beer's-law tint by real water travel distance (clear teal shallows →
+    deep navy) plus in-scatter; water is no longer an opaque painted color.
+  - **SSR**: screen-space reflections ray-marched against the depth buffer — hills, trees
+    and sky mirror on the surface (falls back to sky color at screen edges).
+- Post chain: bright pass → separable Gaussian **bloom** (half-res) → radial **god rays**
+  marched toward the sun's screen position → **ACES filmic tonemap** + exposure.
+  Knobs: `RendererConfig.POST_EXPOSURE / BLOOM_THRESHOLD / BLOOM_STRENGTH / GODRAY_STRENGTH`.
+- **Volumetric clouds**: the sky's flat cloud deck was replaced by a slab-marched
+  volumetric layer (8 steps with a sun tap per step — lit tops, shadowed bases).
+- **Cloud shadows on terrain**: the same FBM cloud field is projected along the sun onto
+  near-field, cutout and LOD terrain (`CLOUD_SHADOW_STRENGTH`), so cloud shade drifts
+  across the whole visible world in sync with the sky.
+- Measured: 1050–1125 FPS with the full stack enabled.
+
+**TAA + cascaded shadows + underwater (July 2026):**
+- **TAA (temporal antialiasing)**: the projection is jittered by a subpixel Halton
+  offset each frame; `post_taa.frag` reprojects the previous output via the depth
+  buffer + previous view-projection, clamps it to the current 3x3 neighborhood
+  (no ghosting on water/cloud animation) and blends. Runs between the scene resolve
+  and bloom. Knobs: `RendererConfig.TAA_ENABLED / TAA_BLEND`.
+- **Cascaded shadow maps**: 3 cascades (`SHADOW_CASCADE_EXTENTS` = 130 / 420 /
+  1300 blocks) replace the single 260-block map — crisp close-ups, whole near
+  field, and a far cascade that the **LOD terrain renders into** (depth-only
+  `lod_shadow.vert`), so mountains shade valleys past a kilometer. Cascade picked
+  per fragment by camera distance, per-cascade depth bias, far edge fades to lit.
+  *Engineering note: passing `sampler2DShadow` as a GLSL function parameter
+  silently disabled the hardware depth compare on the dev machine's driver —
+  cascade sampling must stay inlined per map.*
+- **Underwater rendering**: camera-below-surface detection drives dense blue-green
+  exp fog in every world shader, an underwater sky, screen wobble + vignette in the
+  composite, and dimmed god rays (light shafts). **Caustics** (two drifting ridged
+  noise layers) dance on all submerged terrain — visible through the refracting
+  surface from above and while diving. Water top faces render double-sided while
+  diving, so the surface + Snell's window are visible from below.
+- **God rays artifact fix**: the radial march now fades samples smoothly at the
+  screen border (a hard cutoff stamped nested copies of the screen rectangle) and
+  applies an aspect-correct radial falloff around the sun (whole-sky washout gone).
+- **Tooling**: F2 saves a screenshot to `./screenshots`; `-Pvoxel.camera=x,y,z[,yaw,pitch]`
+  overrides the spawn; `-Pvoxel.autoshot.dir=<dir> -Pvoxel.autoshot.period=<sec>`
+  captures the framebuffer periodically (debug/CI).
+- Measured: 830–1230 FPS with TAA + 3 shadow cascades + full post stack.
+
+**Day/night terrain lighting (July 2026):**
+- `FogCycle` now outputs a **sunlight color × intensity** (`lightR/G/B`) each frame:
+  full white by day, warm orange cast at sunrise/sunset (`TWILIGHT_SUNLIGHT_TINT`),
+  cool blue moonlight scaled down to `NIGHT_LIGHT_FLOOR` (0.18) at night — dark but
+  readable. Uploaded as `uSunLight` and multiplied into all five world shaders
+  (near opaque, cutout, translucent water additive terms, LOD terrain, LOD water),
+  so the whole world tracks the cycle: day → orange sunset → moonlit night →
+  sunrise → day.
+- **Night sky**: moon disc opposite the sun + hash-grid twinkling stars (horizon
+  fade), clouds dim to moonlight so they don't glow against the dark sky.
+- *Engineering note (root cause of a nasty corruption bug): `org.joml.Math.clamp`
+  takes `(min, max, value)` — NOT `(value, min, max)` like Java 21's
+  `java.lang.Math.clamp`. Called in the wrong order it degenerates to
+  `max(value, 0)`: harmless while inputs stay ≤ 1, but any ramp like
+  `clamp(x/0.33, 0, 1)` passes >1 values straight through — a following
+  smoothstep polynomial then extrapolates to huge negatives and lerps explode
+  (uSunLight hit (426, 306, −31) at noon → white-out; negative R/G at morning →
+  inverted blue terrain). The same latent misuse also silently disabled shadows
+  above ~21° sun elevation and let god-ray visibility blow up off-screen — all
+  call sites fixed to the (min, max, value) order.*
+- Next candidates (not yet built): underwater god-ray tuning, cascade seam blending,
+  colored sky-light bounce, TAA sharpening pass.
+
+---
+
 ## High-Level Module Layout
 app/
 └─ Main entry point
@@ -45,12 +172,13 @@ core/
 └─ World generation
 └─ Streaming & caching
 └─ Chunk composition
+└─ Far-field LOD sampling (LodProvider — pure, cache-free)
 └─ Zero rendering code
 
 renderer/
 └─ LWJGL implementation
 └─ Near-field rendering (stable)
-└─ Far-field rendering (future)
+└─ Far-field LOD rendering (stable — Distant Horizons rings)
 
 
 Renderer treats core as a **black box**.

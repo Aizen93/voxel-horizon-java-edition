@@ -54,6 +54,7 @@ src/main/java/org/aouessar/
 │   ├── api/                   # Public streaming interfaces
 │   │   ├── ChunkProvider.java
 │   │   ├── WorldSampler.java
+│   │   ├── LodProvider.java   # Far-field LOD tiles (Distant Horizons)
 │   │   └── WorldAccess.java
 │   │
 │   ├── gen/                   # Generation pipeline
@@ -467,6 +468,93 @@ int regionOriginZ = WorldGrid.regionToBlock(regionZ);
 ```
 
 Uses **`floorDiv` and `floorMod`** for correct negative coordinate handling.
+
+---
+
+## Far-Field LOD (Distant Horizons)
+
+The engine renders a **Distant Horizons–style far field** on top of the near-field
+voxel chunks, pushing the visible range to **4096+ blocks** (configurable via
+`RendererConfig.LOD_VIEW_TILES`).
+
+### Core side: `LodProvider` / `LodTile`
+
+```java
+LodTile tile = lodProvider.sampleTile(tileX, tileZ, step); // step ∈ {4, 8, 16, 32}
+```
+
+- One tile covers one region footprint (256×256 blocks) sampled every `step` blocks
+- A tile holds per-column **height**, **water level** and **top block**, plus a
+  1-sample border ring for smooth normals and crack-free stitching
+- Tiles are computed **directly from the deterministic column functions** — no
+  region build, no cache dependency. A step-16 tile costs a few hundred noise
+  evaluations instead of a full region build, so thousands of tiles stream in
+  within seconds while the region cache stays tiny
+
+### Shared column functions (the key invariant)
+
+`TerrainColumnSampler`, `ClimateColumnSampler` and `RiverColumnSampler` are the
+single source of truth for terrain height, biome classification and river
+channels. Both the full-resolution region pipeline and the LOD sampler evaluate
+these same functions, so **far-field heights are byte-identical to near-field
+chunks** (pinned by `LodConsistencyTest`).
+
+### Renderer side
+
+- `LodMeshCache` keeps one mesh per tile, keyed by tile coords, meshed at a step
+  chosen from the Chebyshev ring distance to the camera (4 → 8 → 16 → 32),
+  rebuilt in the background when the desired step changes
+- `LodMesher` builds vertex-colored heightfield grids with smooth normals, edge
+  skirts (hide cracks between LOD levels) and row-merged water planes
+- `AtlasColorMap` derives per-block vertex colors from the **actual texture
+  atlas**, so distant terrain matches near-field textures exactly; forested
+  biomes blend in canopy leaf colors
+- LOD terrain draws after near opaque geometry (slightly depth-biased, and
+  fragments inside the near-field radius are discarded in-shader), LOD water
+  draws in the translucent pass with sky reflection + sun glint
+
+---
+
+## HDR Post-Processing Pipeline
+
+The renderer draws the whole frame into an offscreen **4x MSAA RGBA16F** HDR
+target managed by `PostProcessor` (renderer module only — core is untouched).
+
+```
+3x shadow cascades (near chunks; LOD casts into the far cascade)
+        ▼
+sky → opaque → LOD terrain → cutout          [jittered projection: TAA]
+        │ resolve color+depth ─────────┐
+        ▼                              ▼
+   translucent water  ◄── samples sceneColor / sceneDepth
+        │
+        ▼ resolve HDR scene
+ TAA (reproject history via depth + prev view-proj, neighborhood clamp)
+ bright pass → Gaussian bloom (half-res)
+ radial god rays (from sun screen position, border-faded + radial falloff)
+        ▼
+ ACES filmic tonemap + exposure (+ underwater wobble/vignette) → HUD
+```
+
+- **Water v3**: the mid-frame resolve lets the water shader do screen-space
+  **refraction** (visible riverbed), **Beer's-law absorption** by real travel
+  distance, and ray-marched **SSR** reflections against the depth buffer
+- **Volumetric clouds** live in the sky shader (slab march with per-step sun
+  tap); the **same FBM field projected along the sun** darkens terrain in the
+  near, cutout and LOD shaders, so cloud shadows drift in sync with the sky
+- **Cascaded shadows**: 130 / 420 / 1300-block ortho cascades, selected per
+  fragment by camera distance; the LOD heightfield casts into the far cascade
+  so distant mountains shade distant valleys
+- **Underwater**: camera-below-surface flag switches every shader to dense
+  blue-green fog, adds animated caustics on submerged terrain, and renders the
+  water surface double-sided (Snell's window from below)
+- **Day/night lighting**: `FogCycle` derives a sunlight color × intensity from
+  the sun height (white day → orange twilight → blue moonlight at
+  `NIGHT_LIGHT_FLOOR`); it multiplies all world shading via `uSunLight`. The
+  sky adds a moon + twinkling stars at night, and clouds dim to moonlight
+- Knobs: `RendererConfig.POST_EXPOSURE`, `BLOOM_*`, `GODRAY_STRENGTH`,
+  `TAA_ENABLED`, `SHADOW_CASCADE_EXTENTS`, `CLOUD_COVER`, `CLOUD_SHADOW_STRENGTH`,
+  `NIGHT_LIGHT_FLOOR`, `TWILIGHT_SUNLIGHT_TINT`
 
 ---
 

@@ -259,15 +259,10 @@ public final class ChunkBuilder {
                     }
                 }
 
-                // Rivers: carve down a little and make a riverbed + water
-                // (Your CarveMask is "isCarvedColumn", so treat it as “river column”)
+                // Rivers: the valley is already carved into the heightmap by
+                // TerrainColumnSampler (water always at sea level). The carve
+                // mask only marks channel columns for riverbed material below.
                 int carvedSurfaceY = surfaceY;
-                if (carvedRiver && surfaceY >= sea - 12) {
-                    carvedSurfaceY = surfaceY - EngineConfig.RIVER_CARVE_DEPTH;
-                    if (carvedSurfaceY < EngineConfig.MIN_Y + EngineConfig.BEDROCK_THICKNESS) {
-                        carvedSurfaceY = EngineConfig.MIN_Y + EngineConfig.BEDROCK_THICKNESS;
-                    }
-                }
 
                 // Now fill column MIN_Y..MAX_Y
                 for (int wy = EngineConfig.MIN_Y; wy <= EngineConfig.MAX_Y; wy++) {
