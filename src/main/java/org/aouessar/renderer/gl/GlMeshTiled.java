@@ -18,12 +18,12 @@ public final class GlMeshTiled implements IGlMesh {
     private final int indexCount;
 
     public GlMeshTiled(MeshData mesh) {
-        final int STRIDE_FLOATS = 7;
+        final int STRIDE_FLOATS = 8;
         int strideBytes = STRIDE_FLOATS * Float.BYTES;
 
-        if ((mesh.vertices.length % 7) != 0) {
+        if (mesh.floatsPerVertex != STRIDE_FLOATS) {
             throw new IllegalArgumentException(
-                    "GlMeshTiled expects 7 floats/vertex, got vertices.length=" + mesh.vertices.length
+                    "GlMeshTiled expects " + STRIDE_FLOATS + " floats/vertex, got " + mesh.floatsPerVertex
             );
         }
 
@@ -53,7 +53,8 @@ public final class GlMeshTiled implements IGlMesh {
         // location 0 : vec3 position
         // location 1 : vec2 tileMin (atlas UV origin)
         // location 2 : vec2 uvLocal (repeat space)
-        // => total = 7 floats per vertex stride
+        // location 3 : float shade (AO x skylight)
+        // => total = 8 floats per vertex stride
 
         // aPos (location=0) vec3
         glEnableVertexAttribArray(0);
@@ -66,6 +67,10 @@ public final class GlMeshTiled implements IGlMesh {
         // aUvLocal (location=2) vec2
         glEnableVertexAttribArray(2);
         glVertexAttribPointer(2, 2, GL_FLOAT, false, strideBytes, 5L * Float.BYTES);
+
+        // aShade (location=3) float
+        glEnableVertexAttribArray(3);
+        glVertexAttribPointer(3, 1, GL_FLOAT, false, strideBytes, 7L * Float.BYTES);
 
         glBindVertexArray(0);
     }

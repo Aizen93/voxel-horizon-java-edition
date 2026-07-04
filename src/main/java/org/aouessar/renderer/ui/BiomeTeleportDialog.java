@@ -1,6 +1,7 @@
 package org.aouessar.renderer.ui;
 
 import org.aouessar.core.api.BiomeLocator;
+import org.aouessar.core.api.WorldSampler;
 import org.aouessar.shared.EngineConfig;
 import org.jetbrains.annotations.NotNull;
 
@@ -14,10 +15,10 @@ import java.util.concurrent.atomic.AtomicReference;
 public final class BiomeTeleportDialog {
     private BiomeTeleportDialog() {}
 
-    public static Optional<TeleportTarget> prompt(int startX, int startZ, BiomeLocator locator) {
+    public static Optional<TeleportTarget> prompt(int startX, int startZ, BiomeLocator locator, WorldSampler sampler) {
         AtomicReference<Optional<TeleportTarget>> out = new AtomicReference<>(Optional.empty());
 
-        Runnable task = () -> out.set(showDialog(startX, startZ, locator));
+        Runnable task = () -> out.set(showDialog(startX, startZ, locator, sampler));
 
         if (SwingUtilities.isEventDispatchThread()) {
             task.run();
@@ -35,7 +36,8 @@ public final class BiomeTeleportDialog {
 
     private static Optional<TeleportTarget> showDialog(
             int startX, int startZ,
-            BiomeLocator locator
+            BiomeLocator locator,
+            WorldSampler sampler
     ) {
         final JDialog dialog = new JDialog((Frame) null, "Teleport to Biome", true);
         dialog.setDefaultCloseOperation(WindowConstants.DISPOSE_ON_CLOSE);
@@ -99,8 +101,12 @@ public final class BiomeTeleportDialog {
                     int wx = hit.get().wx();
                     int wz = hit.get().wz();
 
-                    int y = 250;
-
+                    // Land a few blocks above the terrain surface instead of a fixed
+                    // Y=250. The camera lives in array-space Y (0..WORLD_HEIGHT), so
+                    // convert from world Y. The search already warmed this region,
+                    // so heightAt() returns real data here.
+                    int groundWorldY = sampler.heightAt(wx, wz);
+                    int y = (groundWorldY - EngineConfig.MIN_Y) + 4;
 
                     return Optional.of(new TeleportTarget(wx, y, wz));
                 }

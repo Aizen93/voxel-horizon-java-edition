@@ -34,10 +34,9 @@ public final class DefaultWaterGenerator implements WaterGenerator {
                 int wx = rect.minX + x;
 
                 int surfaceY = heightmap.heightAtUnchecked(wx, wz);
-                boolean carvedRiver = carveMask.isCarvedColumn(wx, wz);
 
                 // Determine water level for this column
-                int level = computeWaterLevel(surfaceY, carvedRiver, sea);
+                int level = computeWaterLevel(surfaceY, sea);
                 waterLevel[i++] = level;
             }
         }
@@ -47,26 +46,19 @@ public final class DefaultWaterGenerator implements WaterGenerator {
 
     /**
      * Computes the water level for a single column.
+     * <p>
+     * River valleys are carved into the heightmap itself (TerrainColumnSampler),
+     * so their channels sit below sea level and this single rule covers oceans
+     * AND rivers — all water in the world is at sea level.
      *
-     * @param surfaceY    the terrain surface height
-     * @param carvedRiver true if this column is a carved river
-     * @param seaLevel    the global sea level
+     * @param surfaceY the terrain surface height
+     * @param seaLevel the global sea level
      * @return water level Y, or {@link WaterLayer#NO_WATER} if dry
      */
-    private int computeWaterLevel(int surfaceY, boolean carvedRiver, int seaLevel) {
-        // Ocean/sea: water fills to sea level if terrain is below
+    private int computeWaterLevel(int surfaceY, int seaLevel) {
         if (surfaceY < seaLevel) {
             return seaLevel;
         }
-
-        // River: carved columns near sea level get water
-        // Rivers carve terrain down, then water fills to (roughly) sea level
-        if (carvedRiver && surfaceY >= seaLevel - 12) {
-            // River water level matches sea level to ensure connectivity
-            return seaLevel;
-        }
-
-        // Above sea level and not a river => no water
         return WaterLayer.NO_WATER;
     }
 }

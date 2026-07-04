@@ -1,6 +1,5 @@
 package org.aouessar.renderer.world;
 
-import org.aouessar.renderer.gl.GlMesh;
 import org.aouessar.renderer.gl.IGlMesh;
 import org.aouessar.renderer.mesh.MeshData;
 import org.joml.FrustumIntersection;
@@ -55,11 +54,6 @@ public final class ChunkMeshCache implements AutoCloseable {
         };
 
         this.executor = Executors.newFixedThreadPool(Math.max(1, workerThreads), threadFactory);
-    }
-
-    /** Good defaults (naive pipeline). */
-    public ChunkMeshCache() {
-        this(Math.max(1, Runtime.getRuntime().availableProcessors() - 1), 128, GlMesh::new);
     }
 
     /** O(1) */
@@ -334,6 +328,29 @@ public final class ChunkMeshCache implements AutoCloseable {
             out.add(key);
         }
         return out.size();
+    }
+
+    /**
+     * Render thread only. Draw every uploaded mesh within a Chebyshev chunk
+     * radius, ignoring the camera frustum — used by the shadow pass, where
+     * off-screen geometry still casts shadows into the view.
+     */
+    public int drawWithin(int centerCx, int centerCz, int radiusChunks) {
+        int drawn = 0;
+        for (var me : entries.entrySet()) {
+            Entry e = me.getValue();
+            IGlMesh m = e.mesh;
+            if (m == null) continue;
+
+            long key = me.getKey();
+            int cx = ChunkKey.unpackX(key);
+            int cz = ChunkKey.unpackZ(key);
+            if (Math.abs(cx - centerCx) > radiusChunks || Math.abs(cz - centerCz) > radiusChunks) continue;
+
+            m.draw();
+            drawn++;
+        }
+        return drawn;
     }
 
     /** Render thread only. Draw exactly the keys collected earlier. */

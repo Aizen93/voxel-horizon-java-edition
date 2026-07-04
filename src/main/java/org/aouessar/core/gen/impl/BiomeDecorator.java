@@ -62,7 +62,7 @@ public final class BiomeDecorator implements SurfaceDecorator {
     }
 
     @Override
-    public SurfaceRules generateSurfaceRules(Heightmap heightmap, BiomeMap biomeMap) {
+    public SurfaceRules generateSurfaceRules(long seed, Heightmap heightmap, BiomeMap biomeMap) {
         LayerRect rect = heightmap.rect();
         int n = rect.sizeX * rect.sizeZ;
 
@@ -70,8 +70,9 @@ public final class BiomeDecorator implements SurfaceDecorator {
         short[] filler = new short[n];
         byte[] depth = new byte[n];
 
-        // Coherent patch noise for ecotones (NOT salt-and-pepper)
-        FastNoiseLite eco = new FastNoiseLite(905282311);
+        // Coherent patch noise for ecotones (NOT salt-and-pepper).
+        // Seeded from the world seed so every world gets its own ecotone pattern.
+        FastNoiseLite eco = new FastNoiseLite(GlobalTerrainUtils.mixSeed(seed, 0x0EC07031));
         eco.SetNoiseType(FastNoiseLite.NoiseType.OpenSimplex2);
         eco.SetFrequency(1.0f / 96.0f); // tune: smaller => larger patches
 
@@ -98,7 +99,7 @@ public final class BiomeDecorator implements SurfaceDecorator {
                 // Your existing border nudge (keeps biome borders less jagged)
                 short majority = majorityBiome4(biomeMap, rect, wx, wz, b);
                 if (majority != b && !isGeographicBiome(majority)) {
-                    float r = GlobalTerrainUtils.hash01(905282311L, wx, wz);
+                    float r = GlobalTerrainUtils.hash01(seed, wx, wz);
                     b = (r < 0.70f) ? b : majority;
                 }
 
@@ -157,6 +158,20 @@ public final class BiomeDecorator implements SurfaceDecorator {
     }
 
     // ---------------- helpers ----------------
+
+    /**
+     * Default top block for a biome at a given surface height (world Y),
+     * without ecotone blending. Shared with the far-field LOD sampler so
+     * distant terrain uses the same palette as near-field surface rules.
+     */
+    public static short defaultTopBlock(short biomeId, int heightY) {
+        if (biomeId < 0 || biomeId >= BIOME_TOP_BLOCKS.length) return Blocks.GRASS;
+        if (biomeId == EngineConfig.BIOME_SNOW) {
+            int aboveSea = heightY - EngineConfig.SEA_LEVEL;
+            return (aboveSea >= 28) ? Blocks.SNOW : BIOME_TOP_BLOCKS[biomeId];
+        }
+        return BIOME_TOP_BLOCKS[biomeId];
+    }
 
     /**
      * Check if the biome is an ocean biome (geographic, not climate-driven).

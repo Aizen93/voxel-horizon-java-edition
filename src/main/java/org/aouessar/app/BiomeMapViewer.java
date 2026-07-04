@@ -731,7 +731,7 @@ public class BiomeMapViewer extends JFrame {
 
     public static void main(String[] args) {
         // Use the same seed as Main class
-        long seed = 905003602311L;
+        long seed = org.aouessar.shared.EngineConfig.WORLD_SEED;
 
         // Parse command line seed if provided
         if (args.length > 0) {

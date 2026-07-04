@@ -1,5 +1,6 @@
 package org.aouessar.renderer.gl;
 
+import org.lwjgl.opengl.GL;
 import org.lwjgl.stb.STBImage;
 import org.lwjgl.system.MemoryStack;
 
@@ -10,6 +11,7 @@ import java.nio.IntBuffer;
 import static org.lwjgl.opengl.GL11.*;
 import static org.lwjgl.opengl.GL12.*;
 import static org.lwjgl.opengl.GL13.*;
+import static org.lwjgl.opengl.GL30.glGenerateMipmap;
 
 public final class GlTexture2D implements AutoCloseable {
 
@@ -25,15 +27,32 @@ public final class GlTexture2D implements AutoCloseable {
         textureId = glGenTextures();
         glBindTexture(GL_TEXTURE_2D, textureId);
 
-        // NEAREST for crisp pixels
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+        // NEAREST magnification keeps the crisp pixel look up close;
+        // mipmapped minification kills the shimmering/aliasing of distant
+        // textures (the single biggest image-quality win for a voxel game).
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST_MIPMAP_LINEAR);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+
+        // 16px tiles on a 16-aligned atlas stay bleed-free down to mip 4
+        // (1 texel per tile); beyond that neighboring tiles would blend.
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, 4);
 
         // Clamp is safer for atlas edges (with padding you can switch to REPEAT later if desired)
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 
         glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, img.pixels);
+        glGenerateMipmap(GL_TEXTURE_2D);
+
+        // Anisotropic filtering sharpens textures seen at grazing angles
+        // (ground planes stretching toward the horizon)
+        if (GL.getCapabilities().GL_EXT_texture_filter_anisotropic) {
+            final int GL_TEXTURE_MAX_ANISOTROPY_EXT = 0x84FE;
+            final int GL_MAX_TEXTURE_MAX_ANISOTROPY_EXT = 0x84FF;
+            float maxAniso = glGetFloat(GL_MAX_TEXTURE_MAX_ANISOTROPY_EXT);
+            glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAX_ANISOTROPY_EXT, Math.min(8f, maxAniso));
+        }
+
         glBindTexture(GL_TEXTURE_2D, 0);
 
         STBImage.stbi_image_free(img.pixels);
