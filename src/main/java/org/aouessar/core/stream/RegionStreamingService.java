@@ -97,7 +97,7 @@ public final class RegionStreamingService implements ChunkProvider, WorldSampler
         }
 
         // Build deterministically from region layers (no async here; async is for region generation)
-        Chunk real = chunkBuilder.buildChunk(region, cx, cz);
+        Chunk real = chunkBuilder.buildChunk(seed, region, cx, cz);
         chunkCache.put(cp, real);
         return real;
     }

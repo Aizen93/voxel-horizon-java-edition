@@ -94,6 +94,21 @@ public final class RendererConfig {
     public static final String POST_COMPOSITE_FRAG = "/shaders/post_composite.frag";
 
     //----------------------------------
+    // Handheld torch (cave exploration)
+    //----------------------------------
+    /** How far the torch light reaches (blocks). */
+    public static final float TORCH_RANGE_BLOCKS = 28f;
+    /** Warm flame color. */
+    public static final float TORCH_R = 1.00f;
+    public static final float TORCH_G = 0.72f;
+    public static final float TORCH_B = 0.42f;
+    /** Light intensity at the torch (multiplies albedo, HDR). */
+    public static final float TORCH_INTENSITY = 1.15f;
+
+    public static final String TORCH_HAND_VERT = "/shaders/torch_hand.vert";
+    public static final String TORCH_HAND_FRAG = "/shaders/torch_hand.frag";
+
+    //----------------------------------
     // Underwater (camera below the water surface)
     //----------------------------------
     /** God rays keep working under water as light shafts, but dimmer. */

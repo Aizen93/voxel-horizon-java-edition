@@ -45,6 +45,12 @@ uniform vec3  uUnderwaterColor;
 // rendered world), but additive terms must not glow at night.
 uniform vec3  uSunLight;
 
+// Handheld torch: warm point light around the camera (0 = off)
+uniform vec3  uTorchPos;
+uniform float uTorchLight;
+uniform vec3  uTorchColor;
+uniform float uTorchRange;
+
 out vec4 FragColor;
 
 float bayer4(vec2 fc) {
@@ -110,6 +116,11 @@ void main() {
 
     bool isTopFace = vShade > 1.001;
 
+    // Baked cave/canopy skylight for this water face (from the mesher):
+    // side faces carry it directly (0..1), top faces carry (1 + light).
+    // Water deep in caves must not reflect the sky or sparkle in the sun.
+    float light01 = clamp(isTopFace ? vShade - 1.0 : vShade, 0.0, 1.0);
+
     // ------------------------------------------------------------------
     // UNDERWATER: looking up at the surface from inside the volume.
     // Snell's window: the world above shows through a bright cone overhead;
@@ -128,11 +139,17 @@ void main() {
         float specUp = pow(max(dot(normal, halfUp), 0.0), 90.0)
                 * smoothstep(0.0, 0.2, uSunDir.y) * 0.8;
 
-        vec3 rgb = mix(uUnderwaterColor * 1.6, above * vec3(0.90, 0.97, 1.0), window)
-                + vec3(specUp);
+        vec3 rgb = mix(uUnderwaterColor * (0.25 + 1.35 * light01), above * vec3(0.90, 0.97, 1.0), window)
+                + vec3(specUp) * light01;
 
         float uwf = 1.0 - exp(-viewDist * 0.06);
         rgb = mix(rgb, uUnderwaterColor, uwf);
+
+        // Torch glow on the surface seen from below (flooded caves)
+        if (uTorchLight > 0.001) {
+            float tf = clamp(1.0 - distance(vWorldPos, uTorchPos) / uTorchRange, 0.0, 1.0);
+            rgb += uTorchColor * (uTorchLight * tf * tf * 0.25);
+        }
         FragColor = vec4(rgb, 1.0);
         return;
     }
@@ -156,7 +173,7 @@ void main() {
     float travel = max(sceneZ - pixelZ, 0.0);
 
     vec3 absorb = exp(-vec3(0.42, 0.15, 0.10) * travel);
-    vec3 scatter = vec3(0.06, 0.20, 0.22) * (1.0 - exp(-travel * 0.30)) * uSunLight;
+    vec3 scatter = vec3(0.06, 0.20, 0.22) * (1.0 - exp(-travel * 0.30)) * uSunLight * light01;
     vec3 underwater = refracted * absorb + scatter;
 
     // ------------------------------------------------------------------
@@ -169,6 +186,9 @@ void main() {
     float skyT = pow(clamp(reflectDir.y * 0.5 + 0.5, 0.0, 1.0), 0.6);
     vec3 skyReflection = mix(uSkyHorizonColor, uSkyTopColor, skyT);
     skyReflection = mix(skyReflection, uSkyHorizonColor * 1.1, exp(-abs(reflectDir.y) * 3.0) * 0.3);
+    // No sky to reflect inside caves: the fallback dims with the baked light.
+    // (Screen-space hits keep their own brightness — a dark cave reflects dark.)
+    skyReflection *= light01;
 
     vec3 reflection = skyReflection;
     if (reflectDir.y > -0.4) {
@@ -202,7 +222,7 @@ void main() {
     float NdotH = max(dot(normal, halfVec), 0.0);
     vec3 sunSpecular = vec3(1.0, 0.98, 0.9)
             * (pow(NdotH, 380.0) * 2.2 + pow(NdotH, 64.0) * 0.22)
-            * smoothstep(-0.1, 0.2, uSunDir.y);
+            * smoothstep(-0.1, 0.2, uSunDir.y) * light01;
 
     vec3 rgb;
     if (isTopFace) {
@@ -212,12 +232,18 @@ void main() {
         float foam = smoothstep(1.3, 0.15, travel)
                 * (0.22 + 0.30 * (0.5 + 0.5 * sin(uTime * 2.2 + vWorldPos.x * 1.9
                                                   + vWorldPos.z * 2.6 + normal.x * 40.0)));
-        rgb += vec3(0.75, 0.80, 0.82) * foam * uSunLight;
+        rgb += vec3(0.75, 0.80, 0.82) * foam * uSunLight * light01;
     } else {
         // Side faces: simple absorbed view into the volume
         vec3 tinted = texture(uSceneColor, screenUv).rgb * exp(-vec3(0.42, 0.15, 0.10) * 3.0)
-                + vec3(0.06, 0.20, 0.22) * uSunLight;
+                + vec3(0.06, 0.20, 0.22) * uSunLight * light01;
         rgb = mix(tinted, skyReflection, fresnel * 0.5) + sunSpecular * 0.4;
+    }
+
+    // Handheld torch: gentle warm glow on nearby water (cave pools)
+    if (uTorchLight > 0.001) {
+        float tf = clamp(1.0 - distance(vWorldPos, uTorchPos) / uTorchRange, 0.0, 1.0);
+        rgb += uTorchColor * (uTorchLight * tf * tf * 0.25);
     }
 
     // Altitude-based fog

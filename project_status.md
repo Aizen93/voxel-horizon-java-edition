@@ -158,8 +158,59 @@ with the LOD already drawn underneath. Euclidean cut, so the horizon ring is cir
   inverted blue terrain). The same latent misuse also silently disabled shadows
   above ~21° sun elevation and let god-ray visibility blow up off-screen — all
   call sites fixed to the (min, max, value) order.*
-- Next candidates (not yet built): underwater god-ray tuning, cascade seam blending,
-  colored sky-light bounce, TAA sharpening pass.
+**Caves (July 2026):**
+- **Classic Minecraft worm carvers** (`CaveCarver`, hooked into `ChunkBuilder`
+  between terrain fill and structures): every chunk within `CAVE_RANGE_CHUNKS`
+  gets a deterministic per-chunk RNG; ~1 in 7 origin chunks hosts a cave system
+  whose tunnels are fully simulated and carved only where they intersect the
+  chunk being built — caves cross chunk borders seamlessly in any build order.
+- Tunnel walk with momentum (yaw/pitch drift), sinusoidal radius swell,
+  occasional pinches, rare huge tunnels, diving shafts (1 in 6), branch splits
+  at mid-length for wide tunnels, and 1-in-4 systems opening with a large
+  squashed room that radiates extra tunnels. Ellipsoid carving skips the bottom
+  30% for flat walkable floors; carved-away grass surfaces regrow on the dirt
+  below so entrance rims look natural.
+- **Surface entrances for free**: worms that wander above the heightmap breach
+  hillsides, meadows and mountain flanks (probe found mouths from sea level to
+  +64 elevation). **Underwater entrances**: carved cells at/below the water
+  level of a wet column (ocean/river/lake) fill with WATER instead of AIR, so
+  seabed breaches become flooded, diveable cave mouths — no floating water,
+  no dry pockets under the sea.
+- **Aquifer dams**: wet columns on the outline of their water body (any dry
+  4-neighbor column) are never carved below the water level. Flooded cave
+  sections are therefore always sealed behind rock — a dry tunnel dead-ends
+  into stone at the groundwater boundary instead of facing a free-standing
+  wall of water (provably no lateral water→air interfaces from carving; same
+  trick as Minecraft's aquifer barrier blocks). Flooded sections remain
+  reachable by diving in from the water body above.
+- **Cave darkness** (mesher, not shaders): the per-column skylight now tracks
+  two ceilings — any blocker (canopy shade, floored at 0.50 as before) and the
+  topmost OPAQUE block (cave depth). Faces deep under rock fade through 0.32 /
+  0.20 down to 0.12, so interiors go properly dark toward the depths while
+  jungle floors keep their old look. Sky level is 3 bits in the greedy mask.
+- **Cave water lighting**: the water shader assumed open sky, so water walls
+  bordering caves glowed bright sky-blue (looked like holes to the outside).
+  Water faces now carry the mesher's baked skylight — side faces directly in
+  vShade, top faces as (1 + light) — and the shader scales sky reflection,
+  sun glitter, in-scatter, foam and the Snell's-window terms by it. Cave water
+  is dark with a faint teal tint (the refracted scene keeps its own light);
+  open lakes/oceans are untouched since their light is 1.0.
+- Vegetation/cactus placements now verify the ground block survived carving
+  (no flowers hovering over fresh entrance holes). Trees keep Minecraft parity
+  (a rare tree over a new entrance can overhang, like vanilla).
+- Knobs: `EngineConfig.CAVE_*` (range, frequency, y-span, room size).
+- **Handheld torch** (cave exploration): a warm point light around the camera
+  (quadratic falloff over `TORCH_RANGE_BLOCKS` = 28, soft diffuse toward the
+  flame, subtle flicker) added independently of sun/sky light in the near
+  opaque/cutout/water shaders — it cuts through cave darkness and is invisible
+  in daylight. A view-space torch viewmodel (wooden stick + HDR flame that
+  feeds bloom) sits bottom-right like a held item. **T** toggles the light
+  (smooth fade, the flame visibly dies/relights), **H** hides/shows the model
+  — fully independent. HUD shows the torch state. Knobs: `TORCH_*` in
+  `RendererConfig`.
+- Next candidates (not yet built): ravines, lava pools at depth, underwater
+  god-ray tuning, cascade seam blending, colored sky-light bounce, TAA
+  sharpening pass.
 
 ---
 

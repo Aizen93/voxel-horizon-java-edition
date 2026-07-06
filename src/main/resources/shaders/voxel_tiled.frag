@@ -55,6 +55,12 @@ uniform vec3  uUnderwaterColor;
 // Day/night sunlight (intensity + color) from FogCycle
 uniform vec3  uSunLight;
 
+// Handheld torch: warm point light around the camera (0 = off)
+uniform vec3  uTorchPos;
+uniform float uTorchLight;
+uniform vec3  uTorchColor;
+uniform float uTorchRange;
+
 out vec4 FragColor;
 
 float hash21(vec2 p) {
@@ -184,6 +190,17 @@ void main() {
         float cfade = exp(-below * 0.10);
         float c = caustic(vWorldPos.xz, uTime);
         color *= 1.0 + c * 1.4 * cfade * smoothstep(0.05, 0.2, uSunDir.y) * sh;
+    }
+
+    // Handheld torch: quadratic falloff + soft diffuse toward the flame,
+    // independent of sun/sky light so it cuts through cave darkness.
+    if (uTorchLight > 0.001) {
+        vec3 toTorch = uTorchPos - vWorldPos;
+        float td = length(toTorch);
+        float fall = clamp(1.0 - td / uTorchRange, 0.0, 1.0);
+        fall *= fall;
+        float ndl = 0.55 + 0.45 * max(dot(n, toTorch / max(td, 0.001)), 0.0);
+        color += tex.rgb * uTorchColor * (uTorchLight * fall * ndl);
     }
 
     float dist = length(vWorldPos - uCameraPos);

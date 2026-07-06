@@ -552,6 +552,17 @@ sky → opaque → LOD terrain → cutout          [jittered projection: TAA]
   the sun height (white day → orange twilight → blue moonlight at
   `NIGHT_LIGHT_FLOOR`); it multiplies all world shading via `uSunLight`. The
   sky adds a moon + twinkling stars at night, and clouds dim to moonlight
+- **Handheld torch**: warm point light around the camera (quadratic falloff,
+  flicker) added in the near-field shaders, plus a view-space viewmodel with
+  an HDR flame that feeds bloom. T = light on/off (smooth fade), H = show/hide
+  the model
+- **Caves**: classic worm carvers run per chunk in `ChunkBuilder`
+  (deterministic per-origin-chunk RNG within `CAVE_RANGE_CHUNKS`, so tunnels
+  cross chunk borders seamlessly). Tunnels/rooms/branches carve terrain to AIR
+  — or to WATER at/below the water level of wet columns, which turns seabed
+  breaches into flooded diveable entrances. The mesher darkens faces by depth
+  under the topmost opaque block (down to 0.12), so cave interiors read as
+  caves without any shader changes
 - Knobs: `RendererConfig.POST_EXPOSURE`, `BLOOM_*`, `GODRAY_STRENGTH`,
   `TAA_ENABLED`, `SHADOW_CASCADE_EXTENTS`, `CLOUD_COVER`, `CLOUD_SHADOW_STRENGTH`,
   `NIGHT_LIGHT_FLOOR`, `TWILIGHT_SUNLIGHT_TINT`

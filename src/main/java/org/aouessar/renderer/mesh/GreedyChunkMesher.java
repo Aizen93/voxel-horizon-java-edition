@@ -26,8 +26,38 @@ public final class GreedyChunkMesher {
 
     /** AO levels 0..3 (0 = fully occluded corner). */
     private static final float[] AO_LEVELS = {0.55f, 0.72f, 0.86f, 1.0f};
-    /** Skylight levels 0..3 (0 = deep under canopy/overhang). */
-    private static final float[] SKY_LEVELS = {0.50f, 0.66f, 0.82f, 1.0f};
+
+    /**
+     * Skylight levels 0..6 (0 = deep cave). Levels 3..6 are the classic
+     * canopy/overhang shades; 0..2 only occur under an OPAQUE ceiling, so
+     * cave interiors go properly dark while leafy jungle floors keep the
+     * old 0.50 minimum.
+     */
+    private static final float[] SKY_LEVELS = {0.12f, 0.20f, 0.32f, 0.50f, 0.66f, 0.82f, 1.0f};
+    private static final int SKY_FULL = 6;
+    private static final int SKY_CANOPY_FLOOR = 3;
+
+    private static int skyLevelForDepth(int depth) {
+        if (depth <= 0) return SKY_FULL;
+        if (depth <= 2) return 5;
+        if (depth <= 5) return 4;
+        if (depth <= 12) return 3;
+        if (depth <= 20) return 2;
+        if (depth <= 32) return 1;
+        return 0;
+    }
+
+    /**
+     * Combined sky level for a front cell: cave darkness from the opaque
+     * ceiling, canopy shade (floored at level 3) from any light blocker.
+     */
+    private static int skyLevelAt(int[] ceilAny, int[] ceilOpaque, int ceilSide, int lx, int lz, int fy) {
+        if (lx < 0 || lx >= ceilSide || lz < 0 || lz >= ceilSide) return SKY_FULL;
+        int i = lz * ceilSide + lx;
+        int canopy = Math.max(SKY_CANOPY_FLOOR, skyLevelForDepth(ceilAny[i] - fy));
+        int cave = skyLevelForDepth(ceilOpaque[i] - fy);
+        return Math.min(cave, canopy);
+    }
 
     /**
      * Corner convention: index = (uMax ? 2 : 0) | (wMax ? 1 : 0), where u/w are
@@ -98,21 +128,30 @@ public final class GreedyChunkMesher {
 
         BlockAccessor accessor = new BlockAccessor(chunkProvider);
 
-        // ---- Skylight ceilings: topmost light-blocking block per column ----
+        // ---- Skylight ceilings: per-column light blockers, two flavors ----
+        // ceilAny: topmost blocker of any kind (leaves count) -> canopy shade.
+        // ceilOpaque: topmost OPAQUE blocker (rock/dirt) -> cave darkness.
         // Covers the chunk plus a 1-column border (front cells of border faces).
         final int ceilSide = cs + 2;
-        int[] ceil = new int[ceilSide * ceilSide];
+        int[] ceilAny = new int[ceilSide * ceilSide];
+        int[] ceilOpaque = new int[ceilSide * ceilSide];
         for (int lz = -1; lz <= cs; lz++) {
             for (int lx = -1; lx <= cs; lx++) {
-                int top = -1000; // no blocker: full sky everywhere
+                int topAny = -1000;    // no blocker: full sky everywhere
+                int topOpaque = -1000;
                 for (int y = h - 1; y >= 0; y--) {
                     short id = accessor.blockAtWorld(baseWx + lx, y, baseWz + lz);
                     if (id == Blocks.AIR || Blocks.isBillboard(id)) continue;
                     if (Blocks.getRenderLayer(id) == RenderLayer.TRANSLUCENT) continue; // water passes light
-                    top = y;
-                    break;
+                    if (topAny == -1000) topAny = y;
+                    if (Blocks.getRenderLayer(id) == RenderLayer.OPAQUE) {
+                        topOpaque = y;
+                        break;
+                    }
                 }
-                ceil[(lz + 1) * ceilSide + (lx + 1)] = top;
+                int i = (lz + 1) * ceilSide + (lx + 1);
+                ceilAny[i] = topAny;
+                ceilOpaque[i] = topOpaque;
             }
         }
 
@@ -123,7 +162,7 @@ public final class GreedyChunkMesher {
         //   bits 0..2   face+1 (0 = empty)
         //   bits 3..18  blockId
         //   bits 19..26 AO (4 corners x 2 bits, by corner index)
-        //   bits 27..28 sky level
+        //   bits 27..29 sky level (0..6)
         //   bits 32+    cell tag when corner AO is non-uniform (blocks merging,
         //               so interpolated AO never smears across cells)
         long[] mask = new long[Math.max(cs * cs, cs * h)];
@@ -170,12 +209,12 @@ public final class GreedyChunkMesher {
                         if (a != Blocks.AIR && isFaceVisible(a, b)) {
                             // a -> b : face points in +d direction; front cell is b
                             int face = faceFor(d, true);
-                            mask[n] = packCell(accessor, ceil, ceilSide, baseWx, baseWz,
+                            mask[n] = packCell(accessor, ceilAny, ceilOpaque, ceilSide, baseWx, baseWz,
                                     a, face, bwx, bwy, bwz, uAxis, wAxis, n);
                         } else if (b != Blocks.AIR && isFaceVisible(b, a)) {
                             // b -> a : face points in -d direction; front cell is a
                             int face = faceFor(d, false);
-                            mask[n] = packCell(accessor, ceil, ceilSide, baseWx, baseWz,
+                            mask[n] = packCell(accessor, ceilAny, ceilOpaque, ceilSide, baseWx, baseWz,
                                     b, face, awx, awy, awz, uAxis, wAxis, n);
                         } else {
                             mask[n] = 0;
@@ -296,12 +335,13 @@ public final class GreedyChunkMesher {
                         int base = target.vCount;
 
                         // Per-vertex shade = corner AO x cell skylight.
-                        // Water surfaces instead encode depth as (1 + level/7),
-                        // which the translucent shader decodes for depth tint/foam.
+                        // Water surfaces instead encode (1 + skylight): >1 marks
+                        // the top face, and the shader recovers the light level
+                        // to dim reflections/specular on cave water.
                         float[] vertShade = new float[4];
                         if (blockId == Blocks.WATER && face == Face.PY) {
-                            float depthShade = 1.0f + (aoPack & 7) / 7.0f;
-                            Arrays.fill(vertShade, depthShade);
+                            float lightShade = 1.0f + SKY_LEVELS[Math.min(aoPack & 7, SKY_FULL)];
+                            Arrays.fill(vertShade, lightShade);
                         } else {
                             int[] map = FACE_VERT_CORNER[face];
                             for (int vi = 0; vi < 4; vi++) {
@@ -334,7 +374,7 @@ public final class GreedyChunkMesher {
             }
         }
 
-        emitBillboards(accessor, atlas, blockRenderMap, baseWx, baseWz, cs, h, cutout, ceil, ceilSide);
+        emitBillboards(accessor, atlas, blockRenderMap, baseWx, baseWz, cs, h, cutout, ceilAny, ceilOpaque, ceilSide);
 
         return new ChunkMeshes(
                 opaque.toMesh(),
@@ -352,38 +392,23 @@ public final class GreedyChunkMesher {
      * level. (fx, fy, fz) is the world position of the face's FRONT (air) cell.
      */
     private static long packCell(
-            BlockAccessor accessor, int[] ceil, int ceilSide, int baseWx, int baseWz,
+            BlockAccessor accessor, int[] ceilAny, int[] ceilOpaque, int ceilSide, int baseWx, int baseWz,
             short blockId, int face,
             int fx, int fy, int fz,
             int[] uAxis, int[] wAxis,
             int cellIndex
     ) {
-        // Skylight from the front cell's column ceiling
-        int lx = fx - baseWx + 1;
-        int lz = fz - baseWz + 1;
-        int sky = 3;
-        if (lx >= 0 && lx < ceilSide && lz >= 0 && lz < ceilSide) {
-            int top = ceil[lz * ceilSide + lx];
-            if (fy < top) {
-                int depth = top - fy;
-                sky = (depth <= 2) ? 2 : (depth <= 5) ? 1 : 0;
-            }
-        }
+        // Skylight from the front cell's column ceilings (canopy + cave)
+        int sky = skyLevelAt(ceilAny, ceilOpaque, ceilSide, fx - baseWx + 1, fz - baseWz + 1, fy);
 
         // Corner AO (skip for translucent blocks: water surfaces stay smooth)
         int aoPack;
         boolean uniform;
         if (blockId == Blocks.WATER && face == Face.PY) {
-            // Water surface: reuse the AO bits to carry the water column depth
-            // (drives depth-tinted transparency + shore foam in the shader).
-            // Different depth bands don't merge, keeping the gradient honest.
-            int depth = 0;
-            int y = fy - 1;
-            while (depth < 12 && y >= 0 && accessor.blockAtWorld(fx, y, fz) == Blocks.WATER) {
-                depth++;
-                y--;
-            }
-            aoPack = Math.min(7, depth * 7 / 12);
+            // Water surface: reuse the AO bits to carry the cell's sky level so
+            // the shader can kill sky reflection / sun glitter on cave water.
+            // Different light bands don't merge, keeping the boundary honest.
+            aoPack = sky;
             uniform = true;
         } else if (Blocks.getRenderLayer(blockId) == RenderLayer.TRANSLUCENT) {
             aoPack = 0xFF; // all corners = 3
@@ -477,7 +502,7 @@ public final class GreedyChunkMesher {
     }
 
     private static int unpackSky(long packed) {
-        return (int) ((packed >>> 27) & 3);
+        return (int) ((packed >>> 27) & 7);
     }
 
     // -----------------------------
@@ -690,7 +715,8 @@ public final class GreedyChunkMesher {
             int cs,
             int h,
             Buf cutout,
-            int[] ceil,
+            int[] ceilAny,
+            int[] ceilOpaque,
             int ceilSide
     ) {
         final int tileFace = Face.PY;
@@ -709,13 +735,8 @@ public final class GreedyChunkMesher {
                     float tileMinU = uv.u0();
                     float tileMinV = uv.v0();
 
-                    // Skylight of the plant's own cell (canopy shade)
-                    int top = ceil[(lz + 1) * ceilSide + (lx + 1)];
-                    float shade = 1f;
-                    if (wy < top) {
-                        int depth = top - wy;
-                        shade = SKY_LEVELS[(depth <= 2) ? 2 : (depth <= 5) ? 1 : 0];
-                    }
+                    // Skylight of the plant's own cell (canopy + cave shade)
+                    float shade = SKY_LEVELS[skyLevelAt(ceilAny, ceilOpaque, ceilSide, lx + 1, lz + 1, wy)];
 
                     cutout.ensure(4);
 

@@ -187,6 +187,8 @@ public final class LwjglRendererV1 {
                 org.aouessar.renderer.gl.PostProcessor post =
                         new org.aouessar.renderer.gl.PostProcessor(fbW[0], fbH[0]);
                 GlTexture2D atlasTex = new GlTexture2D(RendererConfig.ATLAS_PNG);
+                org.aouessar.renderer.world.TorchHand torchHand =
+                        new org.aouessar.renderer.world.TorchHand();
 
                 ChunkMeshCache opaqueCache = new ChunkMeshCache(
                         Math.max(1, Runtime.getRuntime().availableProcessors() - 1),
@@ -265,6 +267,14 @@ public final class LwjglRendererV1 {
             int autoshotIndex = 0;
             boolean f2Down = false;
 
+            // Handheld torch: T toggles the light, H hides/shows the model
+            boolean torchOn = true;
+            boolean torchShown = true;
+            boolean tDown = false;
+            boolean hDown = false;
+            float torchFade = 1f;
+            final Vector3f torchPos = new Vector3f();
+
             double lastTime = glfwGetTime();
             double acc = 0.0;
             int frames = 0;
@@ -277,6 +287,26 @@ public final class LwjglRendererV1 {
 
                 glfwPollEvents();
                 controller.update(dt);
+
+                // -----------------------------
+                // Handheld torch state
+                // -----------------------------
+                boolean tKey = glfwGetKey(window, GLFW_KEY_T) == GLFW_PRESS;
+                if (tKey && !tDown) torchOn = !torchOn;
+                tDown = tKey;
+                boolean hKey = glfwGetKey(window, GLFW_KEY_H) == GLFW_PRESS;
+                if (hKey && !hDown) torchShown = !torchShown;
+                hDown = hKey;
+
+                // Smooth light fade on toggle + subtle flame flicker
+                torchFade += ((torchOn ? 1f : 0f) - torchFade) * Math.min(1f, dt * 10f);
+                float torchFlicker = 1f
+                        + 0.055f * (float) Math.sin(now * 13.0)
+                        + 0.030f * (float) Math.sin(now * 29.7);
+                float torchLight = RendererConfig.TORCH_INTENSITY * torchFade * torchFlicker;
+                // Light source floats slightly ahead of the camera (kinder
+                // gradients when hugging a wall)
+                camera.forwardDir().mul(0.4f, torchPos).add(camera.position);
 
                 if (fbResized[0]) {
                     fbResized[0] = false;
@@ -483,7 +513,7 @@ public final class LwjglRendererV1 {
                 glDepthMask(true);
                 glDisable(GL_BLEND);
 
-                applyPerFrameUniforms(shader, camera, mvp, fogCycle);
+                applyPerFrameUniforms(shader, camera, mvp, fogCycle, torchPos, torchLight);
                 shader.setUniform1f("uNearFadeStart", nearFadeStart);
                 shader.setUniform1f("uNearFadeEnd", nearFadeEnd);
                 applyShadowUniforms(shader, lightMVPs, shadowStrength, shadowTexel, cascSplits, cascBias);
@@ -494,7 +524,7 @@ public final class LwjglRendererV1 {
                 // ---- PASS 1b: FAR-FIELD LOD TERRAIN ----
                 // Drawn after near opaque so identical-depth fragments resolve
                 // to the real chunks (LOD is also biased slightly downward).
-                applyPerFrameUniforms(shaderLodTerrain, camera, mvp, fogCycle);
+                applyPerFrameUniforms(shaderLodTerrain, camera, mvp, fogCycle, torchPos, torchLight);
                 shaderLodTerrain.setUniform1f("uLodNearCut", lodNearCut);
                 applyShadowUniforms(shaderLodTerrain, lightMVPs, shadowStrength, shadowTexel, cascSplits, cascBias);
                 applyCloudShadowUniforms(shaderLodTerrain, fogCycle, (float) now);
@@ -502,7 +532,7 @@ public final class LwjglRendererV1 {
                 int drawnLod = lodCache.drawTerrain();
 
                 // ---- PASS 2: CUTOUT ----
-                applyPerFrameUniforms(shaderCutout, camera, mvp, fogCycle);
+                applyPerFrameUniforms(shaderCutout, camera, mvp, fogCycle, torchPos, torchLight);
                 shaderCutout.setUniform1f("uNearFadeStart", nearFadeStart);
                 shaderCutout.setUniform1f("uNearFadeEnd", nearFadeEnd);
                 applyShadowUniforms(shaderCutout, lightMVPs, shadowStrength, shadowTexel, cascSplits, cascBias);
@@ -526,7 +556,7 @@ public final class LwjglRendererV1 {
 
                 // Far-field LOD water first (it is always farther than the
                 // near-field translucent chunks drawn after it)
-                applyPerFrameUniforms(shaderLodWater, camera, mvp, fogCycle);
+                applyPerFrameUniforms(shaderLodWater, camera, mvp, fogCycle, torchPos, torchLight);
                 shaderLodWater.setUniform1f("uTime", (float) now);
                 shaderLodWater.setUniform3f("uSunDir",
                         fogCycle.sunDirX(), fogCycle.sunDirY(), fogCycle.sunDirZ());
@@ -538,7 +568,7 @@ public final class LwjglRendererV1 {
                 applyUnderwaterUniforms(shaderLodWater, underwater01, waterTopY, uwR, uwG, uwB);
                 int drawnLodWater = lodCache.drawWater();
 
-                applyPerFrameUniforms(shaderTranslucent, camera, mvp, fogCycle);
+                applyPerFrameUniforms(shaderTranslucent, camera, mvp, fogCycle, torchPos, torchLight);
                 shaderTranslucent.setUniform1f("uTime", (float) now);
                 shaderTranslucent.setUniform1f("uNearFadeStart", nearFadeStart);
                 shaderTranslucent.setUniform1f("uNearFadeEnd", nearFadeEnd);
@@ -569,6 +599,15 @@ public final class LwjglRendererV1 {
                 if (underwater01 > 0.5f) glEnable(GL_CULL_FACE);
                 glDisable(GL_BLEND);
                 glDepthMask(true);
+
+                // -----------------------------
+                // Held torch viewmodel: drawn over the world into the HDR
+                // scene (before post), so the flame blooms and tonemaps
+                // -----------------------------
+                if (torchShown) {
+                    torchHand.draw(projJit, (float) now,
+                            torchFlicker * (0.08f + 0.92f * torchFade));
+                }
 
                 // -----------------------------
                 // POST: TAA + bloom + god rays + ACES tonemap -> default framebuffer
@@ -665,6 +704,10 @@ public final class LwjglRendererV1 {
                             .append(camera.position.x).append(", ")
                             .append(camera.position.y).append(", ")
                             .append(camera.position.z).append('\n');
+
+                    debug.append("Torch [T]: ").append(torchOn ? "on" : "off")
+                            .append("  model [H]: ").append(torchShown ? "shown" : "hidden")
+                            .append('\n');
 
                     acc = 0.0;
                     frames = 0;
@@ -765,7 +808,8 @@ public final class LwjglRendererV1 {
         shader.setUniform3f("uUnderwaterColor", uwR, uwG, uwB);
     }
 
-    private void applyPerFrameUniforms(GlShaderProgram shader, Camera camera, Matrix4f mvp, FogCycle fog) {
+    private void applyPerFrameUniforms(GlShaderProgram shader, Camera camera, Matrix4f mvp, FogCycle fog,
+                                       Vector3f torchPos, float torchLight) {
         shader.use();
         shader.setUniformMat4("uMVP", mvp);
 
@@ -777,5 +821,12 @@ public final class LwjglRendererV1 {
 
         // Day/night sunlight: multiplies all world shading
         shader.setUniform3f("uSunLight", fog.lightR(), fog.lightG(), fog.lightB());
+
+        // Handheld torch (LOD shaders don't declare these: silently skipped)
+        shader.setUniform3f("uTorchPos", torchPos.x, torchPos.y, torchPos.z);
+        shader.setUniform1f("uTorchLight", torchLight);
+        shader.setUniform3f("uTorchColor",
+                RendererConfig.TORCH_R, RendererConfig.TORCH_G, RendererConfig.TORCH_B);
+        shader.setUniform1f("uTorchRange", RendererConfig.TORCH_RANGE_BLOCKS);
     }
 }

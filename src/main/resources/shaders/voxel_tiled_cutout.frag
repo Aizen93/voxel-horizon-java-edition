@@ -49,6 +49,12 @@ uniform vec3  uUnderwaterColor;
 // Day/night sunlight (intensity + color) from FogCycle
 uniform vec3  uSunLight;
 
+// Handheld torch: warm point light around the camera (0 = off)
+uniform vec3  uTorchPos;
+uniform float uTorchLight;
+uniform vec3  uTorchColor;
+uniform float uTorchRange;
+
 out vec4 FragColor;
 
 float hash21(vec2 p) {
@@ -155,6 +161,16 @@ void main() {
 
     vec3 n = normalize(cross(dFdx(vWorldPos), dFdy(vWorldPos)));
     vec3 color = tex.rgb * mcShade(vec3(abs(n.x), abs(n.y), abs(n.z))) * vShade * shadowMul * uSunLight;
+
+    // Handheld torch (see voxel_tiled.frag)
+    if (uTorchLight > 0.001) {
+        vec3 toTorch = uTorchPos - vWorldPos;
+        float td = length(toTorch);
+        float fall = clamp(1.0 - td / uTorchRange, 0.0, 1.0);
+        fall *= fall;
+        float ndl = 0.55 + 0.45 * max(dot(n, toTorch / max(td, 0.001)), 0.0);
+        color += tex.rgb * uTorchColor * (uTorchLight * fall * ndl);
+    }
 
     float dist = length(vWorldPos - uCameraPos);
 
