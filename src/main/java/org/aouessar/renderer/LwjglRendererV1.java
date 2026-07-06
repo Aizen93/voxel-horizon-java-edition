@@ -189,6 +189,10 @@ public final class LwjglRendererV1 {
                 GlTexture2D atlasTex = new GlTexture2D(RendererConfig.ATLAS_PNG);
                 org.aouessar.renderer.world.TorchHand torchHand =
                         new org.aouessar.renderer.world.TorchHand();
+                org.aouessar.renderer.world.PlayerModel playerModel =
+                        new org.aouessar.renderer.world.PlayerModel();
+                org.aouessar.renderer.world.AmbientEffects ambient =
+                        new org.aouessar.renderer.world.AmbientEffects(world);
 
                 ChunkMeshCache opaqueCache = new ChunkMeshCache(
                         Math.max(1, Runtime.getRuntime().availableProcessors() - 1),
@@ -245,6 +249,19 @@ public final class LwjglRendererV1 {
             Camera camera = new Camera();
             CameraController controller = new CameraController(camera, window, world);
             GreedyChunkMesher mesher = new GreedyChunkMesher();
+
+            // Optional startup view/avatar: -Dvoxel.view=first|back|front, -Dvoxel.character=elf
+            switch (System.getProperty("voxel.view", "first").toLowerCase()) {
+                case "back" -> camera.viewMode = Camera.VIEW_THIRD_BACK;
+                case "front" -> camera.viewMode = Camera.VIEW_THIRD_FRONT;
+                default -> camera.viewMode = Camera.VIEW_FIRST;
+            }
+            if ("elf".equalsIgnoreCase(System.getProperty("voxel.character", "human"))) {
+                playerModel.setVariant(org.aouessar.renderer.world.PlayerModel.Variant.ELF);
+            }
+            final Vector3f eyePos = new Vector3f();
+            final Vector3f viewFwd = new Vector3f();
+            final WeatherSystem weather = new WeatherSystem(EngineConfig.WORLD_SEED);
 
             // Optional spawn override: -Dvoxel.camera=x,y,z[,yawDeg,pitchDeg]
             String camProp = System.getProperty("voxel.camera");
@@ -308,26 +325,45 @@ public final class LwjglRendererV1 {
                 // gradients when hugging a wall)
                 camera.forwardDir().mul(0.4f, torchPos).add(camera.position);
 
+                // Render viewpoint: the player's eye, or the third-person
+                // orbit camera (controller keeps it out of terrain)
+                camera.eyePosition(eyePos);
+
+                // Player avatar animation + variant switch (C)
+                if (controller.consumeVariantToggle()) playerModel.toggleVariant();
+                playerModel.update(dt, camera.position, camera.yaw, camera.pitch,
+                        controller.isInWater(), controller.isPhysicsOn(), (float) now);
+
                 if (fbResized[0]) {
                     fbResized[0] = false;
                     post.resize(fbW[0], fbH[0]);
                 }
 
                 // -----------------------------
-                // Fog + sky
+                // Weather + fog + sky
                 // -----------------------------
-                fogCycle.setRain01(RendererConfig.DEBUG_RAIN);
+                boolean coldBiome = world.worldSampler().biomeIdAt(
+                        (int) Math.floor(eyePos.x), (int) Math.floor(eyePos.z))
+                        == EngineConfig.BIOME_SNOW;
+                weather.update(now, dt, coldBiome);
+
+                fogCycle.setRain01(weather.rain01());
                 fogCycle.setMist01(RendererConfig.DEBUG_MIST);
-                fogCycle.update((float) now, camera.position.y);
+                fogCycle.update((float) now, eyePos.y);
+
+                float cloudCover = java.lang.Math.min(0.95f,
+                        RendererConfig.CLOUD_COVER + weather.precip01() * 0.45f);
+
+                ambient.update(dt, now, eyePos, weather, fogCycle.day01());
 
                 // -----------------------------
                 // Underwater state (camera below the water surface?)
                 // -----------------------------
                 float underwater01 = 0f;
-                if (camera.position.y < waterTopY) {
+                if (eyePos.y < waterTopY) {
                     int h = world.worldSampler().heightAt(
-                            (int) Math.floor(camera.position.x),
-                            (int) Math.floor(camera.position.z));
+                            (int) Math.floor(eyePos.x),
+                            (int) Math.floor(eyePos.z));
                     if (h < EngineConfig.SEA_LEVEL) underwater01 = 1f;
                 }
                 // Water tint follows the day cycle so night dives go dark
@@ -500,8 +536,8 @@ public final class LwjglRendererV1 {
 
                 invProj.set(projJit).invert();
                 invViewRot.set(view).invert();
-                sky.render(fogCycle, invProj, invViewRot, camera.position, (float) now,
-                        underwater01, uwR, uwG, uwB);
+                sky.render(fogCycle, invProj, invViewRot, eyePos, (float) now,
+                        underwater01, uwR, uwG, uwB, cloudCover);
 
                 atlasTex.bind(0);
                 shadowMap0.bindTexture(1);
@@ -513,30 +549,45 @@ public final class LwjglRendererV1 {
                 glDepthMask(true);
                 glDisable(GL_BLEND);
 
-                applyPerFrameUniforms(shader, camera, mvp, fogCycle, torchPos, torchLight);
+                applyPerFrameUniforms(shader, eyePos, mvp, fogCycle, torchPos, torchLight);
                 shader.setUniform1f("uNearFadeStart", nearFadeStart);
                 shader.setUniform1f("uNearFadeEnd", nearFadeEnd);
                 applyShadowUniforms(shader, lightMVPs, shadowStrength, shadowTexel, cascSplits, cascBias);
-                applyCloudShadowUniforms(shader, fogCycle, (float) now);
+                applyCloudShadowUniforms(shader, fogCycle, (float) now, cloudCover);
                 applyUnderwaterUniforms(shader, underwater01, waterTopY, uwR, uwG, uwB);
                 int drawnOpaque = opaqueCache.drawKeys(visibleKeys);
+
+                // Player avatar (third person only) — drawn with the opaque
+                // world so the later resolve lets water reflect/refract it.
+                // Lit by day/night sunlight x cave skylight + torch warmth.
+                if (camera.isThirdPerson()) {
+                    float avatarSky = controller.skyExposure();
+                    playerModel.draw(mvp, camera.position,
+                            fogCycle.lightR() * avatarSky + RendererConfig.TORCH_R * 0.35f * torchLight,
+                            fogCycle.lightG() * avatarSky + RendererConfig.TORCH_G * 0.35f * torchLight,
+                            fogCycle.lightB() * avatarSky + RendererConfig.TORCH_B * 0.35f * torchLight);
+                }
+
+                // Fish swim with the opaque world: the water surface drawn
+                // later refracts and reflects them like any seabed block
+                ambient.drawWaterCritters(mvp, eyePos);
 
                 // ---- PASS 1b: FAR-FIELD LOD TERRAIN ----
                 // Drawn after near opaque so identical-depth fragments resolve
                 // to the real chunks (LOD is also biased slightly downward).
-                applyPerFrameUniforms(shaderLodTerrain, camera, mvp, fogCycle, torchPos, torchLight);
+                applyPerFrameUniforms(shaderLodTerrain, eyePos, mvp, fogCycle, torchPos, torchLight);
                 shaderLodTerrain.setUniform1f("uLodNearCut", lodNearCut);
                 applyShadowUniforms(shaderLodTerrain, lightMVPs, shadowStrength, shadowTexel, cascSplits, cascBias);
-                applyCloudShadowUniforms(shaderLodTerrain, fogCycle, (float) now);
+                applyCloudShadowUniforms(shaderLodTerrain, fogCycle, (float) now, cloudCover);
                 applyUnderwaterUniforms(shaderLodTerrain, underwater01, waterTopY, uwR, uwG, uwB);
                 int drawnLod = lodCache.drawTerrain();
 
                 // ---- PASS 2: CUTOUT ----
-                applyPerFrameUniforms(shaderCutout, camera, mvp, fogCycle, torchPos, torchLight);
+                applyPerFrameUniforms(shaderCutout, eyePos, mvp, fogCycle, torchPos, torchLight);
                 shaderCutout.setUniform1f("uNearFadeStart", nearFadeStart);
                 shaderCutout.setUniform1f("uNearFadeEnd", nearFadeEnd);
                 applyShadowUniforms(shaderCutout, lightMVPs, shadowStrength, shadowTexel, cascSplits, cascBias);
-                applyCloudShadowUniforms(shaderCutout, fogCycle, (float) now);
+                applyCloudShadowUniforms(shaderCutout, fogCycle, (float) now, cloudCover);
                 applyUnderwaterUniforms(shaderCutout, underwater01, waterTopY, uwR, uwG, uwB);
                 int drawnCutout = cutoutCache.drawKeys(visibleKeys);
 
@@ -556,7 +607,7 @@ public final class LwjglRendererV1 {
 
                 // Far-field LOD water first (it is always farther than the
                 // near-field translucent chunks drawn after it)
-                applyPerFrameUniforms(shaderLodWater, camera, mvp, fogCycle, torchPos, torchLight);
+                applyPerFrameUniforms(shaderLodWater, eyePos, mvp, fogCycle, torchPos, torchLight);
                 shaderLodWater.setUniform1f("uTime", (float) now);
                 shaderLodWater.setUniform3f("uSunDir",
                         fogCycle.sunDirX(), fogCycle.sunDirY(), fogCycle.sunDirZ());
@@ -568,7 +619,7 @@ public final class LwjglRendererV1 {
                 applyUnderwaterUniforms(shaderLodWater, underwater01, waterTopY, uwR, uwG, uwB);
                 int drawnLodWater = lodCache.drawWater();
 
-                applyPerFrameUniforms(shaderTranslucent, camera, mvp, fogCycle, torchPos, torchLight);
+                applyPerFrameUniforms(shaderTranslucent, eyePos, mvp, fogCycle, torchPos, torchLight);
                 shaderTranslucent.setUniform1f("uTime", (float) now);
                 shaderTranslucent.setUniform1f("uNearFadeStart", nearFadeStart);
                 shaderTranslucent.setUniform1f("uNearFadeEnd", nearFadeEnd);
@@ -587,8 +638,8 @@ public final class LwjglRendererV1 {
                 shaderTranslucent.setUniform3f("uSunDir",
                         fogCycle.sunDirX(), fogCycle.sunDirY(), fogCycle.sunDirZ());
 
-                float camChunkX = camera.position.x / EngineConfig.CHUNK_SIZE;
-                float camChunkZ = camera.position.z / EngineConfig.CHUNK_SIZE;
+                float camChunkX = eyePos.x / EngineConfig.CHUNK_SIZE;
+                float camChunkZ = eyePos.z / EngineConfig.CHUNK_SIZE;
 
                 int drawnTrans = translucentCache.drawKeysSorted(
                     visibleKeys,
@@ -601,10 +652,17 @@ public final class LwjglRendererV1 {
                 glDepthMask(true);
 
                 // -----------------------------
+                // Weather + ambient atmosphere (rain/snow/leaves/birds/bolts)
+                // -----------------------------
+                viewFwd.set(camera.forwardDir());
+                if (camera.viewMode == Camera.VIEW_THIRD_FRONT) viewFwd.negate();
+                ambient.drawAtmosphere(mvp, eyePos, viewFwd, weather, now);
+
+                // -----------------------------
                 // Held torch viewmodel: drawn over the world into the HDR
                 // scene (before post), so the flame blooms and tonemaps
                 // -----------------------------
-                if (torchShown) {
+                if (torchShown && !camera.isThirdPerson()) {
                     torchHand.draw(projJit, (float) now,
                             torchFlicker * (0.08f + 0.92f * torchFade));
                 }
@@ -620,9 +678,9 @@ public final class LwjglRendererV1 {
                 float sunV = 0f;
                 float sunVis = 0f;
                 sunClip.set(
-                        camera.position.x + fogCycle.sunDirX() * 4000f,
-                        camera.position.y + fogCycle.sunDirY() * 4000f,
-                        camera.position.z + fogCycle.sunDirZ() * 4000f,
+                        eyePos.x + fogCycle.sunDirX() * 4000f,
+                        eyePos.y + fogCycle.sunDirY() * 4000f,
+                        eyePos.z + fogCycle.sunDirZ() * 4000f,
                         1f);
                 mvpNoJit.transform(sunClip);
                 if (sunClip.w > 0.01f) {
@@ -635,7 +693,7 @@ public final class LwjglRendererV1 {
                 if (underwater01 > 0.5f) sunVis *= RendererConfig.UNDERWATER_GODRAY_MUL;
 
                 post.composite(fbW[0], fbH[0], sunU, sunV, sunVis, 1.0f, 0.92f, 0.78f,
-                        (float) now, underwater01);
+                        (float) now, underwater01, weather.flash01());
 
                 // -----------------------------
                 // EVICT (throttled - not every frame)
@@ -707,6 +765,23 @@ public final class LwjglRendererV1 {
 
                     debug.append("Torch [T]: ").append(torchOn ? "on" : "off")
                             .append("  model [H]: ").append(torchShown ? "shown" : "hidden")
+                            .append('\n');
+
+                    debug.append("Physics [G]: ").append(controller.modeLabel()).append('\n');
+
+                    debug.append("Weather: ").append(weather.label())
+                            .append("  wind ").append(String.format("%.1f", weather.windStrength()))
+                            .append('\n');
+
+                    debug.append("View [F5]: ")
+                            .append(switch (camera.viewMode) {
+                                case Camera.VIEW_THIRD_BACK -> "third person";
+                                case Camera.VIEW_THIRD_FRONT -> "third person (front)";
+                                default -> "first person";
+                            })
+                            .append("  character [C]: ")
+                            .append(playerModel.variant() == PlayerModel.Variant.ELF
+                                    ? "Sylwen the elf ranger" : "Aldric the wanderer")
                             .append('\n');
 
                     acc = 0.0;
@@ -791,10 +866,10 @@ public final class LwjglRendererV1 {
         }
     }
 
-    private void applyCloudShadowUniforms(GlShaderProgram shader, FogCycle fog, float now) {
+    private void applyCloudShadowUniforms(GlShaderProgram shader, FogCycle fog, float now, float cloudCover) {
         shader.setUniform3f("uSunDir", fog.sunDirX(), fog.sunDirY(), fog.sunDirZ());
         shader.setUniform1f("uTime", now);
-        shader.setUniform1f("uCloudCover", RendererConfig.CLOUD_COVER);
+        shader.setUniform1f("uCloudCover", cloudCover);
         shader.setUniform1f("uCloudHeight", RendererConfig.CLOUD_HEIGHT);
         shader.setUniform1f("uCloudShadowStrength", RendererConfig.CLOUD_SHADOW_STRENGTH);
     }
@@ -808,12 +883,13 @@ public final class LwjglRendererV1 {
         shader.setUniform3f("uUnderwaterColor", uwR, uwG, uwB);
     }
 
-    private void applyPerFrameUniforms(GlShaderProgram shader, Camera camera, Matrix4f mvp, FogCycle fog,
+    private void applyPerFrameUniforms(GlShaderProgram shader, Vector3f eyePos, Matrix4f mvp, FogCycle fog,
                                        Vector3f torchPos, float torchLight) {
         shader.use();
         shader.setUniformMat4("uMVP", mvp);
 
-        shader.setUniform3f("uCameraPos", camera.position.x, camera.position.y, camera.position.z);
+        // The render viewpoint (third person: the orbit camera, not the player)
+        shader.setUniform3f("uCameraPos", eyePos.x, eyePos.y, eyePos.z);
 
         shader.setUniform3f("uFogColor", fog.r(), fog.g(), fog.b());
         shader.setUniform1f("uFogStartMul", fog.startMul());

@@ -280,7 +280,7 @@ public final class PostProcessor implements AutoCloseable {
             int windowW, int windowH,
             float sunU, float sunV, float sunVisible01,
             float sunR, float sunG, float sunB,
-            float time, float underwater01
+            float time, float underwater01, float lightning01
     ) {
         glDisable(GL_DEPTH_TEST);
         glDepthMask(false);
@@ -341,6 +341,7 @@ public final class PostProcessor implements AutoCloseable {
         compositeShader.setUniform3f("uRayColor", sunR, sunG, sunB);
         compositeShader.setUniform1f("uTime", time);
         compositeShader.setUniform1f("uUnderwater", underwater01);
+        compositeShader.setUniform1f("uLightning", lightning01);
         glActiveTexture(GL_TEXTURE0);
         glBindTexture(GL_TEXTURE_2D, postInputTex);
         glActiveTexture(GL_TEXTURE1);

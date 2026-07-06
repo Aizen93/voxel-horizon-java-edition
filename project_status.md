@@ -208,9 +208,78 @@ with the LOD already drawn underneath. Euclidean cut, so the horizon ring is cir
   (smooth fade, the flame visibly dies/relights), **H** hides/shows the model
   — fully independent. HUD shows the torch state. Knobs: `TORCH_*` in
   `RendererConfig`.
-- Next candidates (not yet built): ravines, lava pools at depth, underwater
-  god-ray tuning, cascade seam blending, colored sky-light bounce, TAA
-  sharpening pass.
+**Player physics (July 2026):**
+- **Walk mode** (`CameraController`, G toggles fly <-> walk, or start with
+  `-Pvoxel.physics=true`): Minecraft-style character physics — a 0.6 x 1.8
+  AABB with eyes at 1.62, gravity 32 blocks/s² with terminal velocity, Space
+  jumps ~1.25 blocks from the ground, Shift sprints. Collision is
+  axis-separated block clamping run in substeps (<=0.45 blocks each) so even
+  terminal-velocity falls can't tunnel through floors. All physics runs in
+  render-space Y, querying blocks straight from the chunk provider.
+- **Swimming** (feet in water): buoyant damped motion — idle sinks slowly,
+  Space swims up, Ctrl dives, horizontal speed drops to swim pace; a fall
+  into water gets belly-flop damping, and surfacing against a bank while
+  holding Space hops you out (Minecraft's water-exit assist).
+- While the chunk under the player is still streaming in (placeholder chunks
+  have no bedrock), physics freezes in place instead of dropping the player
+  through the unloaded world.
+- G is a TWO-STATE toggle: physics ON (gravity + collision; swimming engages
+  automatically with feet in water) vs physics OFF (free fly — the original
+  camera, no collision at all, flies through rock and water). HUD:
+  `Physics [G]: on (walking) | on (swimming) | off (free fly)`. Knobs:
+  `PLAYER_*` / `SWIM_*` in `RendererConfig`.
+**Third-person character (July 2026):**
+- **Two hand-designed voxel avatars** (`PlayerModel`, C switches): *Aldric the
+  Wanderer* (tanned skin, dark hair, leather tunic, gold belt buckle, slate
+  trousers, travel backpack) and *Sylwen the Elf Ranger* (pale skin, long
+  silver hair, pointed ears, emerald eyes, forest-green tunic with gold trim,
+  knee-length cape). Classic Minecraft proportions (1.8 blocks), built from
+  colored boxes and rebuilt on the CPU each frame for animation.
+- **Animation**: legs/arms swing counter-phased with movement speed (short
+  fast strokes while swimming, relaxed float in fly mode), the body turns
+  smoothly toward the movement direction and settles toward the camera when
+  idle, the head tracks the camera within human limits, the elf's cape sways.
+- **F5 view cycle** (Minecraft-style): first person -> third person (behind)
+  -> third person (front). The orbit camera raycasts back through terrain and
+  snaps in so it never clips into rock; it eases back out. The avatar draws
+  with the opaque world (water reflects/refracts it) and is lit by day/night
+  sunlight x a cave-skylight probe above the player + torch warmth.
+- The whole renderer now distinguishes the PLAYER (physics, torch, streaming
+  center) from the RENDER EYE (view/fog/underwater/reflections) — `Camera`
+  exposes `eyePosition()`; in first person they coincide.
+- Startup props: `-Pvoxel.view=first|back|front`, `-Pvoxel.character=elf`.
+- Known v1 limits: the avatar casts no shadow and is a color-box model (no
+  texture atlas entry yet).
+**Weather + ambient life (July 2026):**
+- **WeatherSystem**: storms roll in "sometimes" — every `WEATHER_SLOT_SECONDS`
+  a seed-deterministic hash decides if the slot rains (~30%); consecutive
+  rainy slots form longer fronts; intensity ramps over ~6s. Cold biomes get
+  snow instead. Wind drifts slowly in direction/strength and stiffens in
+  storms. Storms grey the fog, mute sunlight, flatten the sky colors and push
+  cloud cover toward overcast (sky + terrain cloud shadows follow).
+  Override: `-Pvoxel.weather=clear|rain|snow` (default auto).
+- **Lightning**: heavy rain rolls strikes (~1 per few seconds at full storm):
+  a whole-frame cold flash in the composite (`uLightning`, decaying) plus a
+  jagged HDR-bright bolt from the cloud deck to the ground that bloom turns
+  into a proper flash-glow.
+- **AmbientEffects** (CPU-built geometry, one dynamic VBO): wind-slanted rain
+  streaks and swaying snowflakes that die at their column's surface (so it
+  never rains in caves or under overhangs, and rain lands on water);
+  **falling leaves** (up to 120) shed in clusters from real leaf blocks,
+  tumbling in pendulum arcs with flip foreshortening, tinted per tree with
+  per-leaf variation; **bird flocks** on fair days — real little 3D birds
+  (body, head, beak, tail, articulated wings) that alternate flapping bursts
+  with glides, in three species (crow, gull, sparrow) and varied sizes;
+  **fish** — 3D swimmers (body, belly, snout, beating tail, dorsal +
+  pectoral fins) in five species (cod, salmon, perch common; gold and blue
+  tropicals rarer and smaller) with sizes 0.6-1.6x, small ones flicking
+  faster — drawn with the opaque pass so the water surface refracts and
+  reflects them like world geometry.
+- HUD shows `Weather: rain 85%  wind 1.2`. Knobs: `WEATHER_*`, `RAIN/SNOW_
+  PARTICLES`, `AMBIENT_*`, `LIGHTNING_CHANCE_PER_SEC` in `RendererConfig`.
+- Next candidates (not yet built): rain splash rings on surfaces, thunder
+  (needs audio), ravines, lava pools at depth, avatar shadow casting,
+  underwater god-ray tuning, cascade seam blending, TAA sharpening pass.
 
 ---
 

@@ -94,6 +94,67 @@ public final class RendererConfig {
     public static final String POST_COMPOSITE_FRAG = "/shaders/post_composite.frag";
 
     //----------------------------------
+    // Player physics (walk mode; G toggles fly <-> walk)
+    //----------------------------------
+    /** Blocks/s^2 downward (Minecraft-ish). */
+    public static final float PLAYER_GRAVITY = 32f;
+    /** Max fall speed, blocks/s. */
+    public static final float PLAYER_TERMINAL_VELOCITY = 55f;
+    /** Initial jump velocity: clears just over 1.25 blocks. */
+    public static final float PLAYER_JUMP_VELOCITY = 8.6f;
+    /** Ground speed, blocks/s (shift sprints). */
+    public static final float PLAYER_WALK_SPEED = 4.3f;
+    public static final float PLAYER_SPRINT_MULT = 1.6f;
+    /** Player collision box: 0.6 x 1.8 blocks, eyes near the top. */
+    public static final float PLAYER_HALF_WIDTH = 0.3f;
+    public static final float PLAYER_HEIGHT = 1.8f;
+    public static final float PLAYER_EYE_HEIGHT = 1.62f;
+
+    // Swimming (feet in water)
+    public static final float SWIM_SPEED = 2.6f;
+    public static final float SWIM_UP_SPEED = 4.5f;
+    /** Passive sink rate when idle in water. */
+    public static final float SWIM_SINK_SPEED = 1.4f;
+    /** How fast velocity relaxes toward the swim target (1/s). */
+    public static final float SWIM_DAMPING = 6f;
+
+    //----------------------------------
+    // Weather + ambient life
+    //----------------------------------
+    /** Weather schedule slot length; each slot rolls for rain. */
+    public static final float WEATHER_SLOT_SECONDS = 45f;
+    /** Chance a slot is rainy (storms last one or more slots). */
+    public static final float WEATHER_RAIN_CHANCE = 0.30f;
+    /** Seconds for rain to ramp in/out. */
+    public static final float WEATHER_RAMP_SECONDS = 6f;
+
+    /** Precipitation particle pools around the camera. */
+    public static final int RAIN_PARTICLES = 700;
+    public static final int SNOW_PARTICLES = 650;
+    public static final float PRECIP_RADIUS = 18f;
+
+    /** Lightning: strike probability per second at full rain. */
+    public static final float LIGHTNING_CHANCE_PER_SEC = 0.22f;
+
+    /** Ambient critters. */
+    public static final int AMBIENT_LEAVES_MAX = 120;
+    public static final int AMBIENT_FISH = 14;
+    /** Seconds between bird-flock spawn rolls (day, fair weather only). */
+    public static final float BIRD_SPAWN_INTERVAL = 75f;
+
+    public static final String AMBIENT_VERT = "/shaders/ambient.vert";
+    public static final String AMBIENT_FRAG = "/shaders/ambient.frag";
+
+    //----------------------------------
+    // Third-person view + player avatar (F5 view, C character)
+    //----------------------------------
+    /** Orbit distance behind the player (pulled in by terrain). */
+    public static final float THIRD_PERSON_DISTANCE = 4.0f;
+
+    public static final String AVATAR_VERT = "/shaders/avatar.vert";
+    public static final String AVATAR_FRAG = "/shaders/avatar.frag";
+
+    //----------------------------------
     // Handheld torch (cave exploration)
     //----------------------------------
     /** How far the torch light reaches (blocks). */

@@ -556,6 +556,22 @@ sky → opaque → LOD terrain → cutout          [jittered projection: TAA]
   flicker) added in the near-field shaders, plus a view-space viewmodel with
   an HDR flame that feeds bloom. T = light on/off (smooth fade), H = show/hide
   the model
+- **Player physics**: G toggles free-fly vs Minecraft-style walking — AABB
+  collision (0.6 x 1.8, substepped axis clamping), gravity + jump, and
+  swimming with buoyancy when the feet are in water (Space up / Ctrl dive,
+  bank-hop assist). Physics freezes until the player's chunk has streamed in
+- **Third-person avatar**: F5 cycles first person / third (back) / third
+  (front); C switches between the human wanderer and the elf ranger. The
+  avatar is a procedural voxel model animated on the CPU (walk/swim cycles,
+  camera-tracking head), drawn with the opaque pass and lit by sun x cave
+  skylight + torch. The orbit camera pulls in at terrain so it never clips
+- **Weather + ambient life**: seed-deterministic storm schedule (rain, or
+  snow in cold biomes) with ramping intensity, drifting wind, storm overcast
+  (fog/light/sky/clouds all follow) and lightning (composite flash + HDR
+  bolt). Ambient particles: wind-slanted rain / swaying snow that stop at
+  each column's surface (dry caves), leaves falling from real leaf blocks,
+  bird flocks on fair days, and fish inside water columns drawn opaque so
+  the water refracts them
 - **Caves**: classic worm carvers run per chunk in `ChunkBuilder`
   (deterministic per-origin-chunk RNG within `CAVE_RANGE_CHUNKS`, so tunnels
   cross chunk borders seamlessly). Tunnels/rooms/branches carve terrain to AIR

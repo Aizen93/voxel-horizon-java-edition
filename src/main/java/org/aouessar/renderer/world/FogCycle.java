@@ -140,6 +140,11 @@ public final class FogCycle {
         float valley = valleyMistFromAltitude(cameraY);
         float mist = Math.clamp(0.0f, 1.0f, valley * Math.clamp(0.0f, 1.0f, mist01));
 
+        // Storms grey the fog toward a wet overcast tone
+        fr = Math.lerp(fr, 0.58f, rain * 0.45f);
+        fg = Math.lerp(fg, 0.61f, rain * 0.45f);
+        fb = Math.lerp(fb, 0.66f, rain * 0.45f);
+
         float sMul = 1.0f;
         float rMul = 1.0f;
 
@@ -205,9 +210,19 @@ public final class FogCycle {
         lg = Math.lerp(lg, 0.72f, night);
         lb = Math.lerp(lb, 1.00f, night);
 
-        this.lightR = lr * level;
-        this.lightG = lg * level;
-        this.lightB = lb * level;
+        // Storm clouds mute the sunlight (slightly cold cast)
+        float stormDim = 1f - rain * 0.32f;
+        this.lightR = lr * level * stormDim;
+        this.lightG = lg * level * stormDim;
+        this.lightB = lb * level * (1f - rain * 0.24f);
+
+        // Overcast flattens the sky colors too
+        this.skyTopR *= (1f - rain * 0.30f);
+        this.skyTopG *= (1f - rain * 0.28f);
+        this.skyTopB *= (1f - rain * 0.26f);
+        this.skyHorizonR *= (1f - rain * 0.26f);
+        this.skyHorizonG *= (1f - rain * 0.24f);
+        this.skyHorizonB *= (1f - rain * 0.22f);
     }
 
     /**
