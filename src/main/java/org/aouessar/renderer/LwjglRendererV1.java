@@ -49,8 +49,10 @@ public final class LwjglRendererV1 {
     public void run() {
         if (!glfwInit()) throw new IllegalStateException("Failed to init GLFW");
 
-        glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
-        glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
+        // GL 4.6: multi-draw-indirect batching (GlMeshArena) needs 4.3+;
+        // any GPU of the last decade provides 4.6.
+        glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
+        glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 6);
         glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
         glfwWindowHint(GLFW_SAMPLES, 4); // 4x MSAA: smooth block/LOD edges
 
@@ -194,24 +196,33 @@ public final class LwjglRendererV1 {
                 org.aouessar.renderer.world.AmbientEffects ambient =
                         new org.aouessar.renderer.world.AmbientEffects(world);
 
+                // Shared mesh arena: all near-field chunk meshes live in a few
+                // large buffers; each pass flushes as one multi-draw-indirect.
+                org.aouessar.renderer.gl.GlMeshArena meshArena =
+                        new org.aouessar.renderer.gl.GlMeshArena();
+
                 ChunkMeshCache opaqueCache = new ChunkMeshCache(
                         Math.max(1, Runtime.getRuntime().availableProcessors() - 1),
                         RendererConfig.MAX_IN_FLIGHT_MESHES,
-                        GlMeshTiled::new
+                        meshArena::upload, meshArena::flush
                 );
                 ChunkMeshCache cutoutCache = new ChunkMeshCache(
                         Math.max(1, Runtime.getRuntime().availableProcessors() - 1),
                         RendererConfig.MAX_IN_FLIGHT_MESHES,
-                        GlMeshTiled::new
+                        meshArena::upload, meshArena::flush
                 );
                 ChunkMeshCache translucentCache = new ChunkMeshCache(
                         Math.max(1, Runtime.getRuntime().availableProcessors() - 1),
                         RendererConfig.MAX_IN_FLIGHT_MESHES,
-                        GlMeshTiled::new
+                        meshArena::upload, meshArena::flush
                 );
+                // LOD tiles get their own arena (9-float layout: pos+color+normal)
+                org.aouessar.renderer.gl.GlMeshArena lodArena =
+                        new org.aouessar.renderer.gl.GlMeshArena(9, new int[]{3, 3, 3});
                 LodMeshCache lodCache = new LodMeshCache(
                         RendererConfig.LOD_WORKER_THREADS,
-                        RendererConfig.LOD_MAX_IN_FLIGHT
+                        RendererConfig.LOD_MAX_IN_FLIGHT,
+                        lodArena::upload, lodArena::flush
                 )
         ) {
             final GlShadowMap[] shadowMaps = {shadowMap0, shadowMap1, shadowMap2};
@@ -674,6 +685,22 @@ public final class LwjglRendererV1 {
                 post.resolveAndTaa(invViewProj, prevViewProj, RendererConfig.TAA_ENABLED);
                 prevViewProj.set(mvpNoJit);
 
+                // Volumetric sun shafts: march the shadow cascades (0-strength
+                // when the sun is down, storming hard, or diving)
+                float volStrength = RendererConfig.VOLUMETRIC_ENABLED
+                        ? RendererConfig.VOLUMETRIC_STRENGTH * shadowStrength
+                        * (1f - weather.precip01() * 0.55f)
+                        * (underwater01 > 0.5f ? 0.25f : 1f)
+                        : 0f;
+                post.volumetric(invViewProj,
+                        eyePos.x, eyePos.y, eyePos.z,
+                        fogCycle.sunDirX(), fogCycle.sunDirY(), fogCycle.sunDirZ(),
+                        lightMVPs[0], lightMVPs[1], lightMVPs[2],
+                        cascSplits, cascBias,
+                        fogCycle.lightR(), fogCycle.lightG() * 0.96f, fogCycle.lightB() * 0.88f,
+                        volStrength,
+                        shadowMaps[0], shadowMaps[1], shadowMaps[2]);
+
                 float sunU = 0f;
                 float sunV = 0f;
                 float sunVis = 0f;
@@ -693,7 +720,7 @@ public final class LwjglRendererV1 {
                 if (underwater01 > 0.5f) sunVis *= RendererConfig.UNDERWATER_GODRAY_MUL;
 
                 post.composite(fbW[0], fbH[0], sunU, sunV, sunVis, 1.0f, 0.92f, 0.78f,
-                        (float) now, underwater01, weather.flash01());
+                        (float) now, underwater01, weather.flash01(), invProj);
 
                 // -----------------------------
                 // EVICT (throttled - not every frame)

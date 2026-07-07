@@ -277,6 +277,54 @@ with the LOD already drawn underneath. Euclidean cut, so the horizon ring is cir
   reflects them like world geometry.
 - HUD shows `Weather: rain 85%  wind 1.2`. Knobs: `WEATHER_*`, `RAIN/SNOW_
   PARTICLES`, `AMBIENT_*`, `LIGHTNING_CHANCE_PER_SEC` in `RendererConfig`.
+**GPU performance pass 1 — multi-draw-indirect (July 2026):**
+- Context bumped **GL 3.3 -> 4.6** (all existing #version 330 shaders still
+  compile; 4.3+ needed for indirect multi-draw).
+- **GlMeshArena**: near-field chunk meshes (opaque/cutout/translucent share
+  the 8-float format) now live as regions inside a few large shared VBO/EBO
+  pairs (384MB + 96MB per arena, more arenas allocated on demand) managed by
+  offset-sorted free lists with merge-on-free. Each draw pass queues visible
+  regions into an indirect command list and flushes as **one
+  glMultiDrawElementsIndirect per arena** — at radius 48 that turns ~6,400
+  driver calls per frame into a handful. Order-preserving, so the sorted
+  translucent pass and shadow-pass radius filters work unchanged.
+- `ChunkMeshCache` gained a draw-flush hook; `GlMeshTiled` remains for
+  anything not arena-managed. `-Pvoxel.radius=N` overrides the view radius.
+- Measured: radius 48 (9,409 chunk meshes fully loaded, high-altitude
+  full-world vista) at **203 FPS** vs ~87-140 before in easier scenes.
+- **Pass 2**: `GlMeshArena` generalized to arbitrary float layouts (stride +
+  attribute sizes); LOD tiles (9-float pos/color/normal) get their own arena,
+  so far-field terrain/water/shadow-caster draws batch the same way.
+  `LodMeshCache` takes an uploader + draw-flush hook like `ChunkMeshCache`.
+  Shadow maps bumped **2048 -> 4096** (free on modern GPUs).
+- Measured after pass 2: radius 48 ground-level spawn view at **280 FPS**
+  while chunk generation was still running (vs ~87-140 pre-MDI).
+- **SSAO** (`post_ssao.frag`): half-res AO from the opaque depth buffer —
+  view position reconstructed via uInvProj, normals from depth derivatives
+  (no G-buffer), 12 spiral taps with hashed rotation, Gaussian blurred,
+  multiplied into the scene in the composite before bloom (sky masked).
+  Soft contact shadows in caves, under trees, at every block seam. Knobs:
+  `SSAO_ENABLED / SSAO_RADIUS / SSAO_STRENGTH`. Measured: 347 FPS at radius
+  48 with SSAO on (cost is noise on a modern GPU).
+- **Volumetric sun shafts** (`post_volumetric.frag`): half-res ray march from
+  the camera toward each pixel's depth, sampling the three shadow cascades
+  inline (24 dithered steps, forward-scattering phase with a tiny isotropic
+  floor). Lit air scatters sun toward the camera, shadowed air doesn't — real
+  crepuscular rays behind trees/ridges/cave mouths, not a screen-space smear.
+  Strength follows shadowStrength (0 at night), fades in storms and when
+  diving; tint = the day/night sunlight color. Added in the composite before
+  tonemap. Knobs: `VOLUMETRIC_ENABLED / VOLUMETRIC_STRENGTH`. ~296 FPS at
+  radius 48 with the full stack.
+- **Soft shadows (adaptive PCF, PCSS-style)** in the near cascade of
+  voxel_tiled + cutout: a wide 5-tap probe estimates penumbra depth (with
+  early-outs for fully lit/shadowed pixels), then a hash-rotated 12-tap
+  Poisson disk widens mid-penumbra (1.2 -> 5.5 texels) and stays tight at
+  contact; TAA averages the rotation noise smooth. Far cascades keep 3x3
+  PCF (too distant to matter). No compare-mode sampler conflict: penumbra
+  is estimated from compare results, not blocker depths.
+- Next GPU steps (not yet built): GPU frustum culling (compute shader writes
+  the indirect list), persistent-mapped command rings, render-scale
+  supersampling.
 - Next candidates (not yet built): rain splash rings on surfaces, thunder
   (needs audio), ravines, lava pools at depth, avatar shadow casting,
   underwater god-ray tuning, cascade seam blending, TAA sharpening pass.

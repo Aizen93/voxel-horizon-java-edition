@@ -1,6 +1,7 @@
 package org.aouessar.renderer.world;
 
 import org.aouessar.renderer.gl.GlMeshLod;
+import org.aouessar.renderer.gl.IGlMesh;
 import org.aouessar.renderer.mesh.LodMesher;
 import org.aouessar.renderer.mesh.MeshData;
 import org.aouessar.shared.EngineConfig;
@@ -29,8 +30,8 @@ public final class LodMeshCache implements AutoCloseable {
     }
 
     private static final class Entry {
-        volatile GlMeshLod terrain;
-        volatile GlMeshLod water;
+        volatile IGlMesh terrain;
+        volatile IGlMesh water;
         volatile int step = -1;         // step of the uploaded meshes
         volatile int buildingStep = -1; // step currently being built (-1 = none)
         volatile CompletableFuture<LodMesher.LodMeshes> inFlight;
@@ -46,7 +47,18 @@ public final class LodMeshCache implements AutoCloseable {
     private final int maxInFlight;
     private final AtomicInteger inFlight = new AtomicInteger(0);
 
+    private final java.util.function.Function<MeshData, IGlMesh> uploader;
+    /** Runs after each draw loop — flushes batched multi-draw-indirect calls. */
+    private final Runnable drawFlush;
+
     public LodMeshCache(int workerThreads, int maxInFlight) {
+        this(workerThreads, maxInFlight, GlMeshLod::new, () -> {});
+    }
+
+    public LodMeshCache(int workerThreads, int maxInFlight,
+                        java.util.function.Function<MeshData, IGlMesh> uploader, Runnable drawFlush) {
+        this.uploader = uploader;
+        this.drawFlush = drawFlush;
         this.maxInFlight = Math.max(1, maxInFlight);
 
         ThreadFactory tf = r -> {
@@ -171,14 +183,14 @@ public final class LodMeshCache implements AutoCloseable {
             Entry e = entries.get(r.key);
             if (e == null) continue; // evicted while building
 
-            GlMeshLod oldT = e.terrain;
-            GlMeshLod oldW = e.water;
+            IGlMesh oldT = e.terrain;
+            IGlMesh oldW = e.water;
 
             MeshData terrain = r.meshes.terrain();
             MeshData water = r.meshes.water();
 
-            e.terrain = (terrain != null && !terrain.isEmpty()) ? new GlMeshLod(terrain) : null;
-            e.water = (water != null && !water.isEmpty()) ? new GlMeshLod(water) : null;
+            e.terrain = (terrain != null && !terrain.isEmpty()) ? uploader.apply(terrain) : null;
+            e.water = (water != null && !water.isEmpty()) ? uploader.apply(water) : null;
             e.step = r.step;
             if (e.buildingStep == r.step) e.buildingStep = -1;
             e.inFlight = null;
@@ -216,11 +228,12 @@ public final class LodMeshCache implements AutoCloseable {
         for (int i = 0; i < visible.size(); i++) {
             Entry e = entries.get(visible.get(i));
             if (e == null) continue;
-            GlMeshLod m = e.terrain;
+            IGlMesh m = e.terrain;
             if (m == null) continue;
             m.draw();
             drawn++;
         }
+        drawFlush.run();
         return drawn;
     }
 
@@ -237,11 +250,12 @@ public final class LodMeshCache implements AutoCloseable {
             int tz = ChunkKey.unpackZ(key);
             if (Math.abs(tx - centerTx) > radiusTiles || Math.abs(tz - centerTz) > radiusTiles) continue;
 
-            GlMeshLod m = me.getValue().terrain;
+            IGlMesh m = me.getValue().terrain;
             if (m == null) continue;
             m.draw();
             drawn++;
         }
+        drawFlush.run();
         return drawn;
     }
 
@@ -250,11 +264,12 @@ public final class LodMeshCache implements AutoCloseable {
         for (int i = 0; i < visible.size(); i++) {
             Entry e = entries.get(visible.get(i));
             if (e == null) continue;
-            GlMeshLod m = e.water;
+            IGlMesh m = e.water;
             if (m == null) continue;
             m.draw();
             drawn++;
         }
+        drawFlush.run();
         return drawn;
     }
 

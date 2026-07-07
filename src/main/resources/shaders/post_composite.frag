@@ -10,6 +10,9 @@ uniform vec3  uRayColor;
 uniform float uTime;
 uniform float uUnderwater;
 uniform float uLightning; // whole-sky flash, decays after each strike
+uniform sampler2D uSSAO;  // blurred screen-space ambient occlusion
+uniform float uSSAOOn;
+uniform sampler2D uVol;   // volumetric sun shafts (black when inactive)
 out vec4 FragColor;
 
 // ACES filmic tonemap (Narkowicz fit) — soft highlight rolloff, rich mids
@@ -27,8 +30,13 @@ void main() {
     }
 
     vec3 col = texture(uScene, uv).rgb;
+
+    // SSAO: contact shadows in creases/corners (sky returns 1.0)
+    if (uSSAOOn > 0.5) col *= texture(uSSAO, uv).r;
+
     col += texture(uBloom, uv).rgb * uBloomStrength;
     col += texture(uRays, uv).rgb * uRayColor;
+    col += texture(uVol, uv).rgb;
 
     // Lightning: cold white flash over the whole frame (pre-tonemap)
     col += uLightning * vec3(0.55, 0.60, 0.72);

@@ -39,10 +39,17 @@ public final class ChunkMeshCache implements AutoCloseable {
     private final AtomicInteger inFlight = new AtomicInteger(0);
 
     private final MeshUploader uploader;
+    /** Runs after each draw loop — flushes batched multi-draw-indirect calls. */
+    private final Runnable drawFlush;
 
     public ChunkMeshCache(int workerThreads, int maxInFlight, MeshUploader uploader) {
+        this(workerThreads, maxInFlight, uploader, () -> {});
+    }
+
+    public ChunkMeshCache(int workerThreads, int maxInFlight, MeshUploader uploader, Runnable drawFlush) {
         this.maxInFlight = Math.max(1, maxInFlight);
         this.uploader = uploader;
+        this.drawFlush = drawFlush;
 
         ThreadFactory threadFactory = r -> {
             Thread t = new Thread(r, "mesh-cpu");
@@ -350,6 +357,7 @@ public final class ChunkMeshCache implements AutoCloseable {
             m.draw();
             drawn++;
         }
+        drawFlush.run();
         return drawn;
     }
 
@@ -364,6 +372,7 @@ public final class ChunkMeshCache implements AutoCloseable {
             m.draw();
             drawn++;
         }
+        drawFlush.run();
         return drawn;
     }
 
@@ -400,6 +409,7 @@ public final class ChunkMeshCache implements AutoCloseable {
         if (count == 1) {
             Entry e = entries.get(sortKeys[0]);
             if (e != null && e.mesh != null) e.mesh.draw();
+            drawFlush.run();
             return 1;
         }
 
@@ -418,13 +428,14 @@ public final class ChunkMeshCache implements AutoCloseable {
             sortDist[j + 1] = distI;
         }
 
-        // Draw in sorted order
+        // Draw in sorted order (the indirect command list preserves it)
         for (int i = 0; i < count; i++) {
             Entry e = entries.get(sortKeys[i]);
             if (e != null && e.mesh != null) {
                 e.mesh.draw();
             }
         }
+        drawFlush.run();
         return count;
     }
 }

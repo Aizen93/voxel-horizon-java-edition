@@ -86,6 +86,17 @@ public final class RendererConfig {
             Boolean.parseBoolean(System.getProperty("voxel.taa", "true"));
     public static final float TAA_BLEND = 0.12f;
 
+    // Volumetric sun shafts: shadow-map ray march (crepuscular rays)
+    public static final boolean VOLUMETRIC_ENABLED = true;
+    public static final float VOLUMETRIC_STRENGTH = 0.45f;
+    public static final String POST_VOL_FRAG = "/shaders/post_volumetric.frag";
+
+    // SSAO: depth-derived contact shadows (caves, forest floors, block seams)
+    public static final boolean SSAO_ENABLED = true;
+    public static final float SSAO_RADIUS = 1.4f;
+    public static final float SSAO_STRENGTH = 0.62f;
+    public static final String POST_SSAO_FRAG = "/shaders/post_ssao.frag";
+
     public static final String POST_VERT = "/shaders/post_fullscreen.vert";
     public static final String POST_BRIGHT_FRAG = "/shaders/post_bright.frag";
     public static final String POST_BLUR_FRAG = "/shaders/post_blur.frag";
@@ -249,7 +260,8 @@ public final class RendererConfig {
     // Sun shadows (cascaded)
     //----------------------------------
     public static final boolean SHADOWS_ENABLED = true;
-    public static final int SHADOW_MAP_SIZE = 2048;
+    /** 4096 is effectively free on modern GPUs and halves shadow texel size. */
+    public static final int SHADOW_MAP_SIZE = 4096;
 
     /**
      * Half-extents (blocks) of the ortho box each cascade covers.

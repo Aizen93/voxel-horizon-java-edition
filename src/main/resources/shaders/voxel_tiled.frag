@@ -128,10 +128,33 @@ float sunShadow(vec3 worldPos) {
         vec3 p = ls.xyz / ls.w * 0.5 + 0.5;
         if (p.z >= 1.0) return 1.0;
         p.z -= uCascadeBias.x;
-        for (int dx = -1; dx <= 1; dx++)
-            for (int dy = -1; dy <= 1; dy++)
-                sum += texture(uShadowMap0, vec3(p.xy + vec2(dx, dy) * uShadowTexel, p.z));
-        return sum / 9.0;
+
+        // Adaptive soft PCF (PCSS-style): a wide 5-tap probe estimates how
+        // deep into a penumbra this pixel is; the main 12-tap disk widens
+        // mid-penumbra and stays tight at contact. Hashed per-pixel rotation
+        // turns banding into noise that TAA averages away.
+        float pr = 3.5 * uShadowTexel;
+        float probe = texture(uShadowMap0, vec3(p.xy, p.z))
+                + texture(uShadowMap0, vec3(p.xy + vec2( pr,  pr), p.z))
+                + texture(uShadowMap0, vec3(p.xy + vec2(-pr,  pr), p.z))
+                + texture(uShadowMap0, vec3(p.xy + vec2( pr, -pr), p.z))
+                + texture(uShadowMap0, vec3(p.xy + vec2(-pr, -pr), p.z));
+        probe *= 0.2;
+        if (probe >= 0.999) return 1.0;
+        if (probe <= 0.001) return 0.0;
+
+        float radius = mix(1.2, 5.5, 4.0 * probe * (1.0 - probe)) * uShadowTexel;
+        float ang0 = hash21(gl_FragCoord.xy) * 6.2831853;
+        float ca = cos(ang0), sa = sin(ang0);
+        for (int i = 0; i < 12; i++) {
+            float t = (float(i) + 0.5) / 12.0;
+            float ang = t * 12.566371;
+            float r = sqrt(t) * radius;
+            vec2 o = vec2(cos(ang), sin(ang)) * r;
+            o = vec2(o.x * ca - o.y * sa, o.x * sa + o.y * ca);
+            sum += texture(uShadowMap0, vec3(p.xy + o, p.z));
+        }
+        return sum / 12.0;
     }
     if (d < uCascadeSplits.y) {
         vec4 ls = uLightMVP1 * vec4(worldPos, 1.0);
