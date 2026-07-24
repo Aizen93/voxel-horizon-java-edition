@@ -62,6 +62,16 @@ public final class PostProcessor implements AutoCloseable {
     private int raysFbo;
     private int raysTex;
 
+    private int ssaoFboA;
+    private int ssaoTexA;
+    private int ssaoFboB;
+    private int ssaoTexB;
+
+    private int volFbo;
+    private int volTex;
+
+    private final GlShaderProgram volShader;
+    private final GlShaderProgram ssaoShader;
     private final GlShaderProgram brightShader;
     private final GlShaderProgram blurShader;
     private final GlShaderProgram raysShader;
@@ -71,6 +81,8 @@ public final class PostProcessor implements AutoCloseable {
 
     public PostProcessor(int width, int height) {
         this.vao = glGenVertexArrays();
+        this.volShader = new GlShaderProgram(RendererConfig.POST_VERT, RendererConfig.POST_VOL_FRAG);
+        this.ssaoShader = new GlShaderProgram(RendererConfig.POST_VERT, RendererConfig.POST_SSAO_FRAG);
         this.brightShader = new GlShaderProgram(RendererConfig.POST_VERT, RendererConfig.POST_BRIGHT_FRAG);
         this.blurShader = new GlShaderProgram(RendererConfig.POST_VERT, RendererConfig.POST_BLUR_FRAG);
         this.raysShader = new GlShaderProgram(RendererConfig.POST_VERT, RendererConfig.POST_RAYS_FRAG);
@@ -161,6 +173,24 @@ public final class PostProcessor implements AutoCloseable {
         glBindFramebuffer(GL_FRAMEBUFFER, raysFbo);
         glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, raysTex, 0);
         checkComplete("raysFbo");
+
+        ssaoTexA = createColorTex(hw, hh);
+        ssaoFboA = glGenFramebuffers();
+        glBindFramebuffer(GL_FRAMEBUFFER, ssaoFboA);
+        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, ssaoTexA, 0);
+        checkComplete("ssaoFboA");
+
+        ssaoTexB = createColorTex(hw, hh);
+        ssaoFboB = glGenFramebuffers();
+        glBindFramebuffer(GL_FRAMEBUFFER, ssaoFboB);
+        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, ssaoTexB, 0);
+        checkComplete("ssaoFboB");
+
+        volTex = createColorTex(hw, hh);
+        volFbo = glGenFramebuffers();
+        glBindFramebuffer(GL_FRAMEBUFFER, volFbo);
+        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, volTex, 0);
+        checkComplete("volFbo");
 
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
     }
@@ -276,11 +306,19 @@ public final class PostProcessor implements AutoCloseable {
      * @param sunVisible01  0 when the sun is off-screen/below horizon
      * @param underwater01  1 while the camera is below the water surface
      */
-    public void composite(
-            int windowW, int windowH,
-            float sunU, float sunV, float sunVisible01,
-            float sunR, float sunG, float sunB,
-            float time, float underwater01
+    /**
+     * Volumetric sun shafts: half-res ray march against the shadow cascades.
+     * Run between resolveAndTaa() and composite(); with strength 0 it writes
+     * black (sun down / underwater), which the composite adds harmlessly.
+     */
+    public void volumetric(
+            org.joml.Matrix4f invViewProj,
+            float camX, float camY, float camZ,
+            float sunX, float sunY, float sunZ,
+            org.joml.Matrix4f lightMVP0, org.joml.Matrix4f lightMVP1, org.joml.Matrix4f lightMVP2,
+            float[] splits, float[] bias,
+            float colR, float colG, float colB, float strength,
+            GlShadowMap shadow0, GlShadowMap shadow1, GlShadowMap shadow2
     ) {
         glDisable(GL_DEPTH_TEST);
         glDepthMask(false);
@@ -289,6 +327,77 @@ public final class PostProcessor implements AutoCloseable {
 
         int hw = Math.max(1, width / 2);
         int hh = Math.max(1, height / 2);
+
+        glBindFramebuffer(GL_FRAMEBUFFER, volFbo);
+        glViewport(0, 0, hw, hh);
+        volShader.use();
+        volShader.setUniform1i("uDepth", 0);
+        volShader.setUniform1i("uShadow0", 1);
+        volShader.setUniform1i("uShadow1", 2);
+        volShader.setUniform1i("uShadow2", 3);
+        volShader.setUniformMat4("uInvViewProj", invViewProj);
+        volShader.setUniformMat4("uLightMVP0", lightMVP0);
+        volShader.setUniformMat4("uLightMVP1", lightMVP1);
+        volShader.setUniformMat4("uLightMVP2", lightMVP2);
+        volShader.setUniform3f("uCascadeSplits", splits[0], splits[1], splits[2]);
+        volShader.setUniform3f("uCascadeBias", bias[0], bias[1], bias[2]);
+        volShader.setUniform3f("uCameraPos", camX, camY, camZ);
+        volShader.setUniform3f("uSunDir", sunX, sunY, sunZ);
+        volShader.setUniform3f("uColor", colR, colG, colB);
+        volShader.setUniform1f("uStrength", strength);
+
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_2D, sceneDepthTex);
+        shadow0.bindTexture(1);
+        shadow1.bindTexture(2);
+        shadow2.bindTexture(3);
+        glDrawArrays(GL_TRIANGLES, 0, 3);
+
+        glBindVertexArray(0);
+        glActiveTexture(GL_TEXTURE0);
+        glDepthMask(true);
+        glEnable(GL_DEPTH_TEST);
+    }
+
+    public void composite(
+            int windowW, int windowH,
+            float sunU, float sunV, float sunVisible01,
+            float sunR, float sunG, float sunB,
+            float time, float underwater01, float lightning01,
+            org.joml.Matrix4f invProj
+    ) {
+        glDisable(GL_DEPTH_TEST);
+        glDepthMask(false);
+        glDisable(GL_BLEND);
+        glBindVertexArray(vao);
+
+        int hw = Math.max(1, width / 2);
+        int hh = Math.max(1, height / 2);
+
+        // ---- SSAO: depth -> AO (half-res), then blurred H+V ----
+        if (RendererConfig.SSAO_ENABLED) {
+            glBindFramebuffer(GL_FRAMEBUFFER, ssaoFboA);
+            glViewport(0, 0, hw, hh);
+            ssaoShader.use();
+            ssaoShader.setUniform1i("uDepth", 0);
+            ssaoShader.setUniformMat4("uInvProj", invProj);
+            ssaoShader.setUniform1f("uRadius", RendererConfig.SSAO_RADIUS);
+            ssaoShader.setUniform1f("uStrength", RendererConfig.SSAO_STRENGTH);
+            glActiveTexture(GL_TEXTURE0);
+            glBindTexture(GL_TEXTURE_2D, sceneDepthTex);
+            glDrawArrays(GL_TRIANGLES, 0, 3);
+
+            blurShader.use();
+            blurShader.setUniform1i("uScene", 0);
+            glBindFramebuffer(GL_FRAMEBUFFER, ssaoFboB);
+            blurShader.setUniform2f("uDir", 1f / hw, 0f);
+            glBindTexture(GL_TEXTURE_2D, ssaoTexA);
+            glDrawArrays(GL_TRIANGLES, 0, 3);
+            glBindFramebuffer(GL_FRAMEBUFFER, ssaoFboA);
+            blurShader.setUniform2f("uDir", 0f, 1f / hh);
+            glBindTexture(GL_TEXTURE_2D, ssaoTexB);
+            glDrawArrays(GL_TRIANGLES, 0, 3);
+        }
 
         // ---- Bright pass -> bloomA ----
         glBindFramebuffer(GL_FRAMEBUFFER, bloomFboA);
@@ -341,12 +450,20 @@ public final class PostProcessor implements AutoCloseable {
         compositeShader.setUniform3f("uRayColor", sunR, sunG, sunB);
         compositeShader.setUniform1f("uTime", time);
         compositeShader.setUniform1f("uUnderwater", underwater01);
+        compositeShader.setUniform1f("uLightning", lightning01);
+        compositeShader.setUniform1i("uSSAO", 3);
+        compositeShader.setUniform1f("uSSAOOn", RendererConfig.SSAO_ENABLED ? 1f : 0f);
+        compositeShader.setUniform1i("uVol", 4);
         glActiveTexture(GL_TEXTURE0);
         glBindTexture(GL_TEXTURE_2D, postInputTex);
         glActiveTexture(GL_TEXTURE1);
         glBindTexture(GL_TEXTURE_2D, bloomTexA);
         glActiveTexture(GL_TEXTURE2);
         glBindTexture(GL_TEXTURE_2D, raysTex);
+        glActiveTexture(GL_TEXTURE3);
+        glBindTexture(GL_TEXTURE_2D, ssaoTexA);
+        glActiveTexture(GL_TEXTURE4);
+        glBindTexture(GL_TEXTURE_2D, volTex);
         glDrawArrays(GL_TRIANGLES, 0, 3);
 
         glBindVertexArray(0);
@@ -356,9 +473,9 @@ public final class PostProcessor implements AutoCloseable {
     }
 
     private void destroyTargets() {
-        glDeleteFramebuffers(new int[]{msFbo, opaqueFbo, sceneFbo, taaFbo[0], taaFbo[1], bloomFboA, bloomFboB, raysFbo});
+        glDeleteFramebuffers(new int[]{msFbo, opaqueFbo, sceneFbo, taaFbo[0], taaFbo[1], bloomFboA, bloomFboB, raysFbo, ssaoFboA, ssaoFboB, volFbo});
         glDeleteRenderbuffers(new int[]{msColorRbo, msDepthRbo});
-        glDeleteTextures(new int[]{sceneColorTex, sceneDepthTex, sceneTex, taaTex[0], taaTex[1], bloomTexA, bloomTexB, raysTex});
+        glDeleteTextures(new int[]{sceneColorTex, sceneDepthTex, sceneTex, taaTex[0], taaTex[1], bloomTexA, bloomTexB, raysTex, ssaoTexA, ssaoTexB, volTex});
     }
 
     @Override

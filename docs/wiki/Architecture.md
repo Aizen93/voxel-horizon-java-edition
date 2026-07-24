@@ -552,9 +552,78 @@ sky → opaque → LOD terrain → cutout          [jittered projection: TAA]
   the sun height (white day → orange twilight → blue moonlight at
   `NIGHT_LIGHT_FLOOR`); it multiplies all world shading via `uSunLight`. The
   sky adds a moon + twinkling stars at night, and clouds dim to moonlight
+- **Handheld torch**: warm point light around the camera (quadratic falloff,
+  flicker) added in the near-field shaders, plus a view-space viewmodel with
+  an HDR flame that feeds bloom. T = light on/off (smooth fade), H = show/hide
+  the model
+- **Player physics**: G toggles free-fly vs Minecraft-style walking — AABB
+  collision (0.6 x 1.8, substepped axis clamping), gravity + jump, and
+  swimming with buoyancy when the feet are in water (Space up / Ctrl dive,
+  bank-hop assist). Physics freezes until the player's chunk has streamed in
+- **Third-person avatar**: F5 cycles first person / third (back) / third
+  (front); C switches between the human wanderer and the elf ranger. The
+  avatar is a procedural voxel model animated on the CPU (walk/swim cycles,
+  camera-tracking head), drawn with the opaque pass and lit by sun x cave
+  skylight + torch. The orbit camera pulls in at terrain so it never clips
+- **Weather + ambient life**: seed-deterministic storm schedule (rain, or
+  snow in cold biomes) with ramping intensity, drifting wind, storm overcast
+  (fog/light/sky/clouds all follow) and lightning (composite flash + HDR
+  bolt). Ambient particles: wind-slanted rain / swaying snow that stop at
+  each column's surface (dry caves), leaves falling from real leaf blocks,
+  bird flocks on fair days, and fish inside water columns drawn opaque so
+  the water refracts them
+- **Caves**: classic worm carvers run per chunk in `ChunkBuilder`
+  (deterministic per-origin-chunk RNG within `CAVE_RANGE_CHUNKS`, so tunnels
+  cross chunk borders seamlessly). Tunnels/rooms/branches carve terrain to AIR
+  — or to WATER at/below the water level of wet columns, which turns seabed
+  breaches into flooded diveable entrances. The mesher darkens faces by depth
+  under the topmost opaque block (down to 0.12), so cave interiors read as
+  caves without any shader changes
 - Knobs: `RendererConfig.POST_EXPOSURE`, `BLOOM_*`, `GODRAY_STRENGTH`,
   `TAA_ENABLED`, `SHADOW_CASCADE_EXTENTS`, `CLOUD_COVER`, `CLOUD_SHADOW_STRENGTH`,
   `NIGHT_LIGHT_FLOOR`, `TWILIGHT_SUNLIGHT_TINT`
+
+---
+
+## GPU Batching, Post Effects & Block Edits (July 2026)
+
+### Multi-Draw-Indirect Mesh Arenas (GL 4.6)
+
+Chunk meshes no longer own individual VAO/VBO/EBOs. `GlMeshArena` packs them
+as regions inside a few large shared buffers (offset-sorted free lists with
+merge-on-free; new arenas allocate on demand). Each draw pass queues its
+visible regions into an indirect command list and flushes as **one
+`glMultiDrawElementsIndirect` per arena** — command order preserves the
+sorted translucent pass and shadow radius filters. Two arena families:
+the 8-float near-field tiled format (opaque/cutout/translucent share it)
+and the 9-float LOD format (pos/color/normal). Result: single-digit draw
+calls per frame; radius 48 runs at 250-350 FPS vs ~90-140 before.
+
+### Post-Effect Additions
+
+- **SSAO** (`post_ssao.frag`): half-res AO from the opaque depth buffer,
+  normals from depth derivatives (no G-buffer), blurred, multiplied into the
+  composite. Contact shadows at every block seam and in caves.
+- **Volumetric sun shafts** (`post_volumetric.frag`): a half-res ray march
+  from the camera toward each pixel's depth, sampling the shadow cascades
+  inline — real crepuscular rays, tinted by the day/night sun color, faded
+  by storms, off at night.
+- **Soft shadows**: the near cascade uses adaptive PCF (a wide probe
+  estimates penumbra depth, then a hash-rotated Poisson disk widens
+  mid-penumbra); TAA integrates the rotation noise. 3 cascades at 4096px.
+
+### Block Edits & Remeshing
+
+`ChunkProvider.setBlock` records player edits in a per-chunk overlay inside
+`RegionStreamingService` — applied after deterministic generation on every
+chunk rebuild, so edits survive eviction — and mutates the live cached chunk
+so physics and meshing see the change immediately. `BlockInteraction` (DDA
+raycast, 6-block reach) drives break/place and invalidates the meshes of the
+edited chunk plus border-touching neighbors (faces, AO and skylight ceilings
+cross chunk borders); the normal frustum request pass rebuilds them next
+frame. The UI layer (`UiOverlay` pixel-space quad batch + `PauseMenu`
+immediate-mode widgets) draws the crosshair, atlas-icon hotbar and the
+mouse-driven settings menu wired to mutable per-frame config knobs.
 
 ---
 

@@ -24,7 +24,7 @@ public final class SkyRenderer implements AutoCloseable {
     }
 
     public void render(FogCycle fog, Matrix4f invProj, Matrix4f invViewRot, Vector3f cameraPos, float time,
-                       float underwater01, float uwR, float uwG, float uwB) {
+                       float underwater01, float uwR, float uwG, float uwB, float cloudCover) {
         float tw = Math.clamp(0f, 1f, fog.twilight01());
 
         // Top sky = fog color boosted a bit at twilight
@@ -48,7 +48,7 @@ public final class SkyRenderer implements AutoCloseable {
         skyShader.setUniform3f("uSkyHorizonColor", fog.skyHorizonR(), fog.skyHorizonG(), fog.skyHorizonB());
         skyShader.setUniform1f("uTwilight01", tw);
         skyShader.setUniform1f("uTime", time);
-        skyShader.setUniform1f("uCloudCover", RendererConfig.CLOUD_COVER);
+        skyShader.setUniform1f("uCloudCover", cloudCover);
         skyShader.setUniform1f("uCloudHeight", RendererConfig.CLOUD_HEIGHT);
         skyShader.setUniform1f("uUnderwater", underwater01);
         skyShader.setUniform3f("uUnderwaterColor", uwR, uwG, uwB);

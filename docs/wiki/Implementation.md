@@ -278,10 +278,30 @@ For each column (x, z) in chunk:
 
 #### Special Cases
 
-**Bedrock**: Always at Y = MIN_Y (-64)  
-**Deepslate**: Y < -20 (replaces stone)  
+**Bedrock**: 2-block slab from Y = MIN_Y (-64)  
+**Deepslate**: Y ≤ 16 (replaces stone, `DEEPSLATE_START_Y`)  
 **Water**: Fills air below waterLevel  
-**Carving**: Removes terrain blocks where carved
+**River carve mask**: marks channel columns for riverbed gravel
+
+#### Cave Carving (July 2026)
+
+After the terrain fill and before structures, `CaveCarver.carve(seed, chunk,
+layers)` runs classic Minecraft worm carvers: every origin chunk within
+`CAVE_RANGE_CHUNKS` (8) gets a deterministic RNG; ~1 in 7 hosts a cave system
+whose tunnels (momentum random-walks with sinusoidal radius, branches, rooms)
+are fully simulated with only the blocks inside this chunk carved — seamless
+across chunk borders in any build order. Carved cells at/below the water
+level of a wet column become WATER (flooded, diveable entrances); wet columns
+bordering dry columns are never carved below water level ("aquifer dams" — no
+free-standing water walls). Grass regrows on dirt exposed at entrance rims.
+
+#### Player Edit Overlay (July 2026)
+
+`ChunkBuilder.buildChunk(seed, region, cx, cz)` produces the deterministic
+chunk; `RegionStreamingService` then applies the per-chunk **block edit
+overlay** (player break/place actions) before caching — so edits survive
+eviction and rebuilds. `setBlock` also mutates the live cached chunk for
+immediate visibility.
 
 #### Structure Application
 

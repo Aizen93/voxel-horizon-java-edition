@@ -29,6 +29,14 @@ public interface ChunkProvider {
      * @return The chunk (may be a placeholder if not ready)
      */
     Chunk getChunk(int cx, int cz);
+
+    /**
+     * Player edit: set one block (world coords, world Y). The edit must
+     * survive chunk eviction/rebuild. Returns false if unsupported.
+     */
+    default boolean setBlock(int wx, int wy, int wz, short id) {
+        return false;
+    }
 }
 ```
 
@@ -38,6 +46,9 @@ public interface ChunkProvider {
 - ✅ **Thread-safe**: Can be called from multiple threads
 - ✅ **No exceptions**: Never throws for valid coordinates
 - ✅ **Infinite coords**: Works with any integer coordinates
+- ✅ **setBlock** (July 2026): records the edit in a per-chunk overlay applied
+  after deterministic generation on every rebuild AND mutates the live cached
+  chunk — so edits survive eviction and are visible immediately
 
 **Placeholder Behavior**:
 - Returns chunk filled with appropriate blocks:

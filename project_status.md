@@ -158,8 +158,206 @@ with the LOD already drawn underneath. Euclidean cut, so the horizon ring is cir
   inverted blue terrain). The same latent misuse also silently disabled shadows
   above ~21° sun elevation and let god-ray visibility blow up off-screen — all
   call sites fixed to the (min, max, value) order.*
-- Next candidates (not yet built): underwater god-ray tuning, cascade seam blending,
-  colored sky-light bounce, TAA sharpening pass.
+**Caves (July 2026):**
+- **Classic Minecraft worm carvers** (`CaveCarver`, hooked into `ChunkBuilder`
+  between terrain fill and structures): every chunk within `CAVE_RANGE_CHUNKS`
+  gets a deterministic per-chunk RNG; ~1 in 7 origin chunks hosts a cave system
+  whose tunnels are fully simulated and carved only where they intersect the
+  chunk being built — caves cross chunk borders seamlessly in any build order.
+- Tunnel walk with momentum (yaw/pitch drift), sinusoidal radius swell,
+  occasional pinches, rare huge tunnels, diving shafts (1 in 6), branch splits
+  at mid-length for wide tunnels, and 1-in-4 systems opening with a large
+  squashed room that radiates extra tunnels. Ellipsoid carving skips the bottom
+  30% for flat walkable floors; carved-away grass surfaces regrow on the dirt
+  below so entrance rims look natural.
+- **Surface entrances for free**: worms that wander above the heightmap breach
+  hillsides, meadows and mountain flanks (probe found mouths from sea level to
+  +64 elevation). **Underwater entrances**: carved cells at/below the water
+  level of a wet column (ocean/river/lake) fill with WATER instead of AIR, so
+  seabed breaches become flooded, diveable cave mouths — no floating water,
+  no dry pockets under the sea.
+- **Aquifer dams**: wet columns on the outline of their water body (any dry
+  4-neighbor column) are never carved below the water level. Flooded cave
+  sections are therefore always sealed behind rock — a dry tunnel dead-ends
+  into stone at the groundwater boundary instead of facing a free-standing
+  wall of water (provably no lateral water→air interfaces from carving; same
+  trick as Minecraft's aquifer barrier blocks). Flooded sections remain
+  reachable by diving in from the water body above.
+- **Cave darkness** (mesher, not shaders): the per-column skylight now tracks
+  two ceilings — any blocker (canopy shade, floored at 0.50 as before) and the
+  topmost OPAQUE block (cave depth). Faces deep under rock fade through 0.32 /
+  0.20 down to 0.12, so interiors go properly dark toward the depths while
+  jungle floors keep their old look. Sky level is 3 bits in the greedy mask.
+- **Cave water lighting**: the water shader assumed open sky, so water walls
+  bordering caves glowed bright sky-blue (looked like holes to the outside).
+  Water faces now carry the mesher's baked skylight — side faces directly in
+  vShade, top faces as (1 + light) — and the shader scales sky reflection,
+  sun glitter, in-scatter, foam and the Snell's-window terms by it. Cave water
+  is dark with a faint teal tint (the refracted scene keeps its own light);
+  open lakes/oceans are untouched since their light is 1.0.
+- Vegetation/cactus placements now verify the ground block survived carving
+  (no flowers hovering over fresh entrance holes). Trees keep Minecraft parity
+  (a rare tree over a new entrance can overhang, like vanilla).
+- Knobs: `EngineConfig.CAVE_*` (range, frequency, y-span, room size).
+- **Handheld torch** (cave exploration): a warm point light around the camera
+  (quadratic falloff over `TORCH_RANGE_BLOCKS` = 28, soft diffuse toward the
+  flame, subtle flicker) added independently of sun/sky light in the near
+  opaque/cutout/water shaders — it cuts through cave darkness and is invisible
+  in daylight. A view-space torch viewmodel (wooden stick + HDR flame that
+  feeds bloom) sits bottom-right like a held item. **T** toggles the light
+  (smooth fade, the flame visibly dies/relights), **H** hides/shows the model
+  — fully independent. HUD shows the torch state. Knobs: `TORCH_*` in
+  `RendererConfig`.
+**Player physics (July 2026):**
+- **Walk mode** (`CameraController`, G toggles fly <-> walk, or start with
+  `-Pvoxel.physics=true`): Minecraft-style character physics — a 0.6 x 1.8
+  AABB with eyes at 1.62, gravity 32 blocks/s² with terminal velocity, Space
+  jumps ~1.25 blocks from the ground, Shift sprints. Collision is
+  axis-separated block clamping run in substeps (<=0.45 blocks each) so even
+  terminal-velocity falls can't tunnel through floors. All physics runs in
+  render-space Y, querying blocks straight from the chunk provider.
+- **Swimming** (feet in water): buoyant damped motion — idle sinks slowly,
+  Space swims up, Ctrl dives, horizontal speed drops to swim pace; a fall
+  into water gets belly-flop damping, and surfacing against a bank while
+  holding Space hops you out (Minecraft's water-exit assist).
+- While the chunk under the player is still streaming in (placeholder chunks
+  have no bedrock), physics freezes in place instead of dropping the player
+  through the unloaded world.
+- G is a TWO-STATE toggle: physics ON (gravity + collision; swimming engages
+  automatically with feet in water) vs physics OFF (free fly — the original
+  camera, no collision at all, flies through rock and water). HUD:
+  `Physics [G]: on (walking) | on (swimming) | off (free fly)`. Knobs:
+  `PLAYER_*` / `SWIM_*` in `RendererConfig`.
+**Third-person character (July 2026):**
+- **Two hand-designed voxel avatars** (`PlayerModel`, C switches): *Aldric the
+  Wanderer* (tanned skin, dark hair, leather tunic, gold belt buckle, slate
+  trousers, travel backpack) and *Sylwen the Elf Ranger* (pale skin, long
+  silver hair, pointed ears, emerald eyes, forest-green tunic with gold trim,
+  knee-length cape). Classic Minecraft proportions (1.8 blocks), built from
+  colored boxes and rebuilt on the CPU each frame for animation.
+- **Animation**: legs/arms swing counter-phased with movement speed (short
+  fast strokes while swimming, relaxed float in fly mode), the body turns
+  smoothly toward the movement direction and settles toward the camera when
+  idle, the head tracks the camera within human limits, the elf's cape sways.
+- **F5 view cycle** (Minecraft-style): first person -> third person (behind)
+  -> third person (front). The orbit camera raycasts back through terrain and
+  snaps in so it never clips into rock; it eases back out. The avatar draws
+  with the opaque world (water reflects/refracts it) and is lit by day/night
+  sunlight x a cave-skylight probe above the player + torch warmth.
+- The whole renderer now distinguishes the PLAYER (physics, torch, streaming
+  center) from the RENDER EYE (view/fog/underwater/reflections) — `Camera`
+  exposes `eyePosition()`; in first person they coincide.
+- Startup props: `-Pvoxel.view=first|back|front`, `-Pvoxel.character=elf`.
+- Known v1 limits: the avatar casts no shadow and is a color-box model (no
+  texture atlas entry yet).
+**Weather + ambient life (July 2026):**
+- **WeatherSystem**: storms roll in "sometimes" — every `WEATHER_SLOT_SECONDS`
+  a seed-deterministic hash decides if the slot rains (~30%); consecutive
+  rainy slots form longer fronts; intensity ramps over ~6s. Cold biomes get
+  snow instead. Wind drifts slowly in direction/strength and stiffens in
+  storms. Storms grey the fog, mute sunlight, flatten the sky colors and push
+  cloud cover toward overcast (sky + terrain cloud shadows follow).
+  Override: `-Pvoxel.weather=clear|rain|snow` (default auto).
+- **Lightning**: heavy rain rolls strikes (~1 per few seconds at full storm):
+  a whole-frame cold flash in the composite (`uLightning`, decaying) plus a
+  jagged HDR-bright bolt from the cloud deck to the ground that bloom turns
+  into a proper flash-glow.
+- **AmbientEffects** (CPU-built geometry, one dynamic VBO): wind-slanted rain
+  streaks and swaying snowflakes that die at their column's surface (so it
+  never rains in caves or under overhangs, and rain lands on water);
+  **falling leaves** (up to 120) shed in clusters from real leaf blocks,
+  tumbling in pendulum arcs with flip foreshortening, tinted per tree with
+  per-leaf variation; **bird flocks** on fair days — real little 3D birds
+  (body, head, beak, tail, articulated wings) that alternate flapping bursts
+  with glides, in three species (crow, gull, sparrow) and varied sizes;
+  **fish** — 3D swimmers (body, belly, snout, beating tail, dorsal +
+  pectoral fins) in five species (cod, salmon, perch common; gold and blue
+  tropicals rarer and smaller) with sizes 0.6-1.6x, small ones flicking
+  faster — drawn with the opaque pass so the water surface refracts and
+  reflects them like world geometry.
+- HUD shows `Weather: rain 85%  wind 1.2`. Knobs: `WEATHER_*`, `RAIN/SNOW_
+  PARTICLES`, `AMBIENT_*`, `LIGHTNING_CHANCE_PER_SEC` in `RendererConfig`.
+**GPU performance pass 1 — multi-draw-indirect (July 2026):**
+- Context bumped **GL 3.3 -> 4.6** (all existing #version 330 shaders still
+  compile; 4.3+ needed for indirect multi-draw).
+- **GlMeshArena**: near-field chunk meshes (opaque/cutout/translucent share
+  the 8-float format) now live as regions inside a few large shared VBO/EBO
+  pairs (384MB + 96MB per arena, more arenas allocated on demand) managed by
+  offset-sorted free lists with merge-on-free. Each draw pass queues visible
+  regions into an indirect command list and flushes as **one
+  glMultiDrawElementsIndirect per arena** — at radius 48 that turns ~6,400
+  driver calls per frame into a handful. Order-preserving, so the sorted
+  translucent pass and shadow-pass radius filters work unchanged.
+- `ChunkMeshCache` gained a draw-flush hook; `GlMeshTiled` remains for
+  anything not arena-managed. `-Pvoxel.radius=N` overrides the view radius.
+- Measured: radius 48 (9,409 chunk meshes fully loaded, high-altitude
+  full-world vista) at **203 FPS** vs ~87-140 before in easier scenes.
+- **Pass 2**: `GlMeshArena` generalized to arbitrary float layouts (stride +
+  attribute sizes); LOD tiles (9-float pos/color/normal) get their own arena,
+  so far-field terrain/water/shadow-caster draws batch the same way.
+  `LodMeshCache` takes an uploader + draw-flush hook like `ChunkMeshCache`.
+  Shadow maps bumped **2048 -> 4096** (free on modern GPUs).
+- Measured after pass 2: radius 48 ground-level spawn view at **280 FPS**
+  while chunk generation was still running (vs ~87-140 pre-MDI).
+- **SSAO** (`post_ssao.frag`): half-res AO from the opaque depth buffer —
+  view position reconstructed via uInvProj, normals from depth derivatives
+  (no G-buffer), 12 spiral taps with hashed rotation, Gaussian blurred,
+  multiplied into the scene in the composite before bloom (sky masked).
+  Soft contact shadows in caves, under trees, at every block seam. Knobs:
+  `SSAO_ENABLED / SSAO_RADIUS / SSAO_STRENGTH`. Measured: 347 FPS at radius
+  48 with SSAO on (cost is noise on a modern GPU).
+- **Volumetric sun shafts** (`post_volumetric.frag`): half-res ray march from
+  the camera toward each pixel's depth, sampling the three shadow cascades
+  inline (24 dithered steps, forward-scattering phase with a tiny isotropic
+  floor). Lit air scatters sun toward the camera, shadowed air doesn't — real
+  crepuscular rays behind trees/ridges/cave mouths, not a screen-space smear.
+  Strength follows shadowStrength (0 at night), fades in storms and when
+  diving; tint = the day/night sunlight color. Added in the composite before
+  tonemap. Knobs: `VOLUMETRIC_ENABLED / VOLUMETRIC_STRENGTH`. ~296 FPS at
+  radius 48 with the full stack.
+- **Soft shadows (adaptive PCF, PCSS-style)** in the near cascade of
+  voxel_tiled + cutout: a wide 5-tap probe estimates penumbra depth (with
+  early-outs for fully lit/shadowed pixels), then a hash-rotated 12-tap
+  Poisson disk widens mid-penumbra (1.2 -> 5.5 texels) and stays tight at
+  contact; TAA averages the rotation noise smooth. Far cascades keep 3x3
+  PCF (too distant to matter). No compare-mode sampler conflict: penumbra
+  is estimated from compare results, not blocker depths.
+- Next GPU steps (not yet built): GPU frustum culling (compute shader writes
+  the indirect list), persistent-mapped command rings, render-scale
+  supersampling.
+**Block interaction + UI (July 2026):**
+- **Break/place blocks**: Amanatides-Woo DDA raycast from the eye (6-block
+  reach) finds the aimed block + entry face; LMB breaks (hold-repeat), RMB
+  places the hotbar block against the hit face — never inside the player
+  while physics is on. A wireframe highlight hugs the aimed block.
+- **Edits survive eviction**: `ChunkProvider.setBlock` records edits in a
+  per-chunk overlay inside `RegionStreamingService` (applied after
+  deterministic generation on every rebuild) AND mutates the live cached
+  chunk so physics/meshing see it instantly.
+- **Remeshing**: `ChunkMeshCache.invalidate(cx,cz)` closes the mesh, cancels
+  in-flight builds and purges stale upload-queue entries; edits invalidate
+  the edited chunk plus border neighbors (faces/AO/skylight cross borders).
+  The normal frustum request pass rebuilds next frame.
+- **Hotbar**: 9 slots with real atlas icons (keys 1-9 + scroll wheel),
+  crosshair, all drawn by a new immediate-mode `UiOverlay` (screen-space
+  pixel quads; NOTE: the y-flip reverses winding — cull must be off).
+- **ESC pause menu** (`PauseMenu`): a real mouse-driven UI — centered framed
+  panel over a dimmed world, two columns of Minecraft-style sliders (drag the
+  knob, green fill bar, centered label+value, -/+ fine-step buttons), toggle
+  buttons (TAA/SSAO, green when on) and Resume/Quit buttons, all with hover
+  highlights. Immediate-mode: widgets are laid out/hit-tested/drawn per frame
+  through the UiOverlay quad batch; labels centered via stb_easy_font
+  metrics. 14 sliders + 2 toggles live-tune the de-finalized config knobs
+  (day length, SSAO, sun shafts, bloom, exposure, shadows, clouds, rain,
+  torch, night brightness, walk/jump/fly speed, mouse sensitivity) — all
+  read per-frame, so changes apply instantly. ESC no longer closes the
+  window directly.
+- Scripted hooks for CI-style checks: `-Pvoxel.edittest=true` carves a notch
+  and places a pillar through the real edit path; `-Pvoxel.menutest=true`
+  opens the menu at startup.
+- Next candidates (not yet built): world persistence (edits are in-memory),
+  audio, rain splash rings, thunder, ravines, lava pools at depth, avatar
+  shadow casting, underwater god-ray tuning, cascade seam blending.
 
 ---
 

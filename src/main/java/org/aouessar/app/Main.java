@@ -41,7 +41,9 @@ public final class Main {
         WorldAccess access = new WorldAccess(world, world, biomeLocator, world, lodProvider);
 
         // Renderer v1: near-field voxel chunks + far-field LOD rings.
-        // 16 chunks (256 blocks) of full voxel detail before the LOD takes over.
-        new LwjglRendererV1(access, 16).run();
+        // Default 16 chunks (256 blocks) of full voxel detail before the LOD
+        // takes over; override with -Pvoxel.radius=48 etc.
+        int radius = Integer.getInteger("voxel.radius", 48);
+        new LwjglRendererV1(access, radius).run();
     }
 }

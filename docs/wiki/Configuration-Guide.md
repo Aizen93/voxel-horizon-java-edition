@@ -587,3 +587,45 @@ Full JSON schema: `src/main/resources/constraints/world_content.schema.json`
 ---
 
 **Next**: [Contributing →](Contributing.md)
+
+---
+
+## Runtime Properties & Live Settings (July 2026)
+
+### Command-line properties
+
+Forwarded by Gradle as `-Pvoxel.*` (e.g. `./gradlew run -Pvoxel.radius=48`):
+
+| Property | Effect |
+|----------|--------|
+| `voxel.radius=N` | Near-field view radius in chunks (default 48) |
+| `voxel.camera=x,y,z[,yawDeg,pitchDeg]` | Spawn position/orientation (render-space Y = world Y + 64) |
+| `voxel.physics=true` | Start in walk mode instead of free fly |
+| `voxel.view=first\|back\|front` | Startup camera mode |
+| `voxel.character=human\|elf` | Startup avatar |
+| `voxel.weather=auto\|clear\|rain\|snow` | Force weather (default auto schedule) |
+| `voxel.taa=false` | Disable TAA (debugging) |
+| `voxel.autoshot.dir=<dir>`, `voxel.autoshot.period=<sec>` | Periodic screenshots (debug/CI) |
+| `voxel.edittest=true` | Scripted block-edit smoke test (carves a notch, places a pillar) |
+| `voxel.menutest=true` | Open the pause menu at startup |
+
+### Live-tunable settings (ESC menu)
+
+These `RendererConfig` knobs are mutable and read every frame, so the pause
+menu changes them with instant effect: day length, SSAO (toggle/strength),
+volumetric sun shafts, bloom, exposure, shadow strength, cloud cover, rain
+chance, torch intensity, night brightness, walk speed, jump velocity, fly
+speed, mouse sensitivity, TAA toggle.
+
+**Not** live-tunable: world-generation constants (seed, terrain/cave/biome
+parameters) — already-generated regions would seam against new ones. Change
+those in `EngineConfig`/`RendererConfig` before launching.
+
+### Engineering notes (hard-won)
+
+- `org.joml.Math.clamp` is `(min, max, value)` — NOT `(value, min, max)`.
+  The wrong order silently degenerates to `max(value, 0)`.
+- Passing a `sampler2DShadow` as a GLSL function parameter silently disables
+  hardware depth compare on some drivers — cascade sampling stays inlined.
+- Screen-space UI quads: the pixel-to-NDC y-flip reverses winding — disable
+  back-face culling when drawing UI.

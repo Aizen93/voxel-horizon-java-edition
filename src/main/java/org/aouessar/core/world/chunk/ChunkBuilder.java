@@ -1,5 +1,6 @@
 package org.aouessar.core.world.chunk;
 
+import org.aouessar.core.gen.impl.CaveCarver;
 import org.aouessar.core.math.GlobalTerrainUtils;
 import org.aouessar.core.world.Blocks;
 import org.aouessar.core.world.Region;
@@ -14,7 +15,7 @@ import java.util.List;
 
 public final class ChunkBuilder {
 
-    public Chunk buildChunk(Region region, int cx, int cz) {
+    public Chunk buildChunk(long seed, Region region, int cx, int cz) {
         short[] blocks = new short[EngineConfig.CHUNK_SIZE * EngineConfig.CHUNK_SIZE * EngineConfig.WORLD_HEIGHT];
         Chunk chunk = new Chunk(cx, cz, blocks);
 
@@ -331,7 +332,10 @@ public final class ChunkBuilder {
             }
         }
 
-        // ---- 3) Structures placement (once, after terrain fill) ----
+        // ---- 3) Caves (worm carvers; before structures so entrance rims are final) ----
+        CaveCarver.carve(seed, chunk, layers);
+
+        // ---- 4) Structures placement (once, after terrain fill) ----
         for (StructureMap.Placement p : localPlacements) {
             applyPlacement(chunk, layers, cx, cz, p);
         }
@@ -436,7 +440,10 @@ public final class ChunkBuilder {
         if (Blocks.isVegetation(marker)) {
             if (!Blocks.isGrassLike(groundTop) && !Blocks.isSoil(groundTop)) return;
 
-            // Place ONLY if that world position is inside THIS chunk
+            // Place ONLY if that world position is inside THIS chunk, and only
+            // if the ground survived cave carving (no flowers floating in
+            // entrance holes)
+            if (!isGroundedInChunk(chunk, cx, cz, wx, wy, wz)) return;
             setIfInThisChunkIfReplaceable(chunk, cx, cz, wx, wy, wz, marker);
             return;
         }
@@ -445,6 +452,7 @@ public final class ChunkBuilder {
         if (marker == Blocks.CACTUS) {
             if (!Blocks.isSandLike(groundTop)) return;
 
+            if (!isGroundedInChunk(chunk, cx, cz, wx, wy, wz)) return;
             int height = 2 + (GlobalTerrainUtils.hash8(wx, wz) % 3);
             for (int dy = 0; dy < height; dy++) {
                 int y = wy + dy;
@@ -483,6 +491,21 @@ public final class ChunkBuilder {
         }
 
         return top;
+    }
+
+    /**
+     * True when (wx, wy, wz) is inside this chunk AND the block directly below
+     * is still solid ground (cave carving may have removed it).
+     */
+    private boolean isGroundedInChunk(Chunk chunk, int cx, int cz, int wx, int wy, int wz) {
+        if (!isInChunk(wx, wz, cx, cz)) return false;
+        if (wy - 1 < EngineConfig.MIN_Y) return false;
+
+        int lx = Math.floorMod(wx, EngineConfig.CHUNK_SIZE);
+        int lz = Math.floorMod(wz, EngineConfig.CHUNK_SIZE);
+
+        short below = chunk.getBlock(lx, wy - 1, lz);
+        return below != Blocks.AIR && below != Blocks.WATER;
     }
 
     private void setIfInThisChunkIfReplaceable(Chunk chunk, int cx, int cz, int wx, int wy, int wz, short id) {

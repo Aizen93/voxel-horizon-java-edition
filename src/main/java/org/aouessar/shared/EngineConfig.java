@@ -211,6 +211,33 @@ public final class EngineConfig {
     public static final int RIVER_MAX_ELEVATION_ABOVE_SEA = 60;  // valleys fade out above this
     public static final int RIVERBED_THICKNESS = 2;
 
+    // ======================= CAVES (classic Minecraft worm carvers) =======================
+    // Perlin-worm tunnels + rooms, seeded per origin chunk so caves cross chunk
+    // borders seamlessly. Tunnels that wander up through a hillside, the ground
+    // or a river/ocean bed become natural cave entrances; carved cells below the
+    // water level of a wet column flood, so underwater entrances stay underwater.
+
+    /** How many chunks away a tunnel can originate and still reach this chunk. */
+    public static final int CAVE_RANGE_CHUNKS = 8;
+
+    /** 1 in N origin chunks hosts a cave system (Minecraft classic: 7). */
+    public static final int CAVE_SYSTEM_CHANCE = 7;
+
+    /** Upper bound for the nested-random cave system count per origin chunk. */
+    public static final int CAVE_SYSTEMS_MAX = 15;
+
+    /** Lowest tunnel start (keep a rock floor above the bedrock). */
+    public static final int CAVE_MIN_Y = MIN_Y + 8;
+
+    /** Biased-low vertical span for tunnel starts above CAVE_MIN_Y. */
+    public static final int CAVE_Y_SPAN = 200;
+
+    /** 1 in N systems opens with a big room (which then spawns extra tunnels). */
+    public static final int CAVE_ROOM_CHANCE = 4;
+
+    /** Room radius = 1.5 + rand * this (blocks, horizontal; rooms are squashed). */
+    public static final float CAVE_ROOM_MAX_EXTRA_RADIUS = 6.0f;
+
     // ===============================================================================
 
     // --- Region layer halo (fixes region seam structure cuts) ---
