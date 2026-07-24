@@ -1,0 +1,33 @@
+# docs/wiki is the single source of truth for documentation (versioned with
+# the code, reviewable in PRs). This workflow mirrors it to the GitHub wiki
+# (<repo>.wiki.git) whenever docs change on main — no manual sync needed.
+name: Publish Wiki
+
+on:
+  push:
+    branches: [main]
+    paths: ['docs/wiki/**']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Mirror docs/wiki to the GitHub wiki
+        run: |
+          git clone "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.wiki.git" wiki-repo
+          rsync -a --delete --exclude .git docs/wiki/ wiki-repo/
+          cd wiki-repo
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git diff --cached --quiet || git commit -m "Sync wiki from docs/wiki (${GITHUB_SHA::7})"
+          git push
+        # If GITHUB_TOKEN can't push to the wiki on your plan/settings, create
+        # a PAT with repo scope, add it as secret WIKI_TOKEN and swap it in
+        # the clone URL above.

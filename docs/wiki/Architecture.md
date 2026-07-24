@@ -585,6 +585,48 @@ sky → opaque → LOD terrain → cutout          [jittered projection: TAA]
 
 ---
 
+## GPU Batching, Post Effects & Block Edits (July 2026)
+
+### Multi-Draw-Indirect Mesh Arenas (GL 4.6)
+
+Chunk meshes no longer own individual VAO/VBO/EBOs. `GlMeshArena` packs them
+as regions inside a few large shared buffers (offset-sorted free lists with
+merge-on-free; new arenas allocate on demand). Each draw pass queues its
+visible regions into an indirect command list and flushes as **one
+`glMultiDrawElementsIndirect` per arena** — command order preserves the
+sorted translucent pass and shadow radius filters. Two arena families:
+the 8-float near-field tiled format (opaque/cutout/translucent share it)
+and the 9-float LOD format (pos/color/normal). Result: single-digit draw
+calls per frame; radius 48 runs at 250-350 FPS vs ~90-140 before.
+
+### Post-Effect Additions
+
+- **SSAO** (`post_ssao.frag`): half-res AO from the opaque depth buffer,
+  normals from depth derivatives (no G-buffer), blurred, multiplied into the
+  composite. Contact shadows at every block seam and in caves.
+- **Volumetric sun shafts** (`post_volumetric.frag`): a half-res ray march
+  from the camera toward each pixel's depth, sampling the shadow cascades
+  inline — real crepuscular rays, tinted by the day/night sun color, faded
+  by storms, off at night.
+- **Soft shadows**: the near cascade uses adaptive PCF (a wide probe
+  estimates penumbra depth, then a hash-rotated Poisson disk widens
+  mid-penumbra); TAA integrates the rotation noise. 3 cascades at 4096px.
+
+### Block Edits & Remeshing
+
+`ChunkProvider.setBlock` records player edits in a per-chunk overlay inside
+`RegionStreamingService` — applied after deterministic generation on every
+chunk rebuild, so edits survive eviction — and mutates the live cached chunk
+so physics and meshing see the change immediately. `BlockInteraction` (DDA
+raycast, 6-block reach) drives break/place and invalidates the meshes of the
+edited chunk plus border-touching neighbors (faces, AO and skylight ceilings
+cross chunk borders); the normal frustum request pass rebuilds them next
+frame. The UI layer (`UiOverlay` pixel-space quad batch + `PauseMenu`
+immediate-mode widgets) draws the crosshair, atlas-icon hotbar and the
+mouse-driven settings menu wired to mutable per-frame config knobs.
+
+---
+
 ## Summary
 
 The architecture is designed for:

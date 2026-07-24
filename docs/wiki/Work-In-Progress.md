@@ -14,11 +14,42 @@ This document outlines the current development status, ongoing work, and future 
 
 ## Current Development Phase
 
-**Phase**: Foundation + Content Expansion  
-**Branch**: `terrain-generation-configurable`  
-**Focus**: Configurable biome system, terrain quality, performance optimization
+**Phase**: Playable Sandbox  
+**Branch**: `feature/unreal-engine`  
+**Focus**: Gameplay systems (block editing, UI), rendering quality/performance on modern GPUs
 
 ### Recent Achievements
+
+✅ **Block interaction + game UI** (Jul 2026)
+- Break/place with DDA raycast, wireframe highlight, hold-repeat
+- Session-persistent edit overlay + border-aware remeshing
+- Atlas-icon hotbar (1-9/scroll), crosshair
+- Mouse-driven ESC pause menu: sliders/toggles live-tuning 16 settings
+
+✅ **GPU performance + visuals pass** (Jul 2026)
+- GL 3.3 → 4.6; multi-draw-indirect mesh arenas (near + LOD): single-digit
+  draw calls/frame, 250-350 FPS at radius 48 (was ~90-140)
+- 4096px shadow cascades with adaptive soft PCF (PCSS-style penumbras)
+- SSAO contact shadows; volumetric sun shafts marched through the cascades
+
+✅ **Weather + ambient life** (Jul 2026)
+- Seed-scheduled rain/snow fronts, wind, storm overcast, lightning
+- 3D fish (5 species), bird flocks (3 species, flap/glide), tumbling leaves
+
+✅ **Playable character** (Jul 2026)
+- Physics: gravity, jumping, swimming (G toggles free fly)
+- Third-person avatars (F5 back/front): human wanderer + elf ranger
+- Handheld torch (T/H): flickering point light + HDR flame viewmodel
+
+✅ **Caves** (Jul 2026)
+- Classic worm carvers: tunnels, rooms, branches; surface + underwater
+  entrances; aquifer dams seal flooded sections (no standing water walls)
+- True cave darkness via dual skylight ceilings in the mesher
+
+✅ **HDR renderer foundation** (Jul 2026)
+- TAA, 3-cascade shadow mapping, bloom, god rays, ACES tonemap
+- Water v3: refraction, SSR, caustics, underwater fog/Snell's window
+- Full day/night cycle with moon/stars + storm-aware sky
 
 ✅ **Deep ocean & island system** (Jan 2026)
 - Realistic ocean depth variants
@@ -56,7 +87,7 @@ This document outlines the current development status, ongoing work, and future 
 - [x] Thread-safe concurrent region building
 - [x] Infinite coordinate support
 - [x] Safe placeholder system
-- [x] LRU cache eviction (Caffeine)
+- [x] Radius-based cache eviction (regions, chunks and meshes evict outside the view radius)
 
 ### Terrain Generation ✅
 
@@ -111,83 +142,24 @@ This document outlines the current development status, ongoing work, and future 
 
 ## In Progress
 
-### 🚧 Performance Optimization (HIGH PRIORITY)
+### 📋 World Persistence (NEXT, HIGH PRIORITY)
 
-**Goal**: Improve frame rates and reduce memory usage
+Block edits, player position, time of day and settings are in-memory
+only. Region-file style saves make builds permanent. Prerequisite for
+anything survival-shaped.
 
-**Tasks**:
-- [ ] Profiling with JProfiler/VisualVM
-- [ ] Mesh batching improvements
-- [ ] Async chunk meshing (off main thread)
-- [ ] Better cache eviction strategies
-- [ ] Reduce placeholder generation overhead
-- [ ] GPU memory management
+### 📋 Audio (HIGH PRIORITY)
 
-**Current Status**: Initial profiling done, optimization planned
+No sound at all yet: wind, rain, thunder, footsteps, water, ambience.
+LWJGL ships OpenAL; weather/biome/cave state can drive the mix.
 
----
+### 📋 Backlog (smaller items)
 
-### 🚧 Caves (MAJOR FEATURE)
-
-**Goal**: Add true 3D underground cave systems
-
-**Design**:
-```
-CaveVolume (per region)
-  ↓
-3D noise field (cellular/worm caves)
-  ↓
-Per-voxel carving decision
-  ↓
-Integrated with ChunkBuilder
-```
-
-**Tasks**:
-- [ ] Design CaveVolume layer (3D array or sparse structure)
-- [ ] Implement 3D cave noise (cellular + worm caves)
-- [ ] Region-paged cave volumes
-- [ ] ChunkBuilder integration
-- [ ] Cave biome variants (lush caves, dripstone, etc.)
-- [ ] Cave structure placement (ore veins, mushrooms)
-
-**Challenges**:
-- Memory: 3D arrays are expensive (256×384×256 = 25M values/region)
-- Solution: Sparse voxel octrees or run-length encoding
-- Determinism: Must be reproducible from seed
-
-**Current Status**: Design phase, prototyping 3D noise
-
----
-
-### 🚧 Rivers (UPGRADE)
-
-**Goal**: Coherent river networks that flow to oceans
-
-**Design**:
-```
-Drainage Basin Analysis
-  ↓
-River Network Graph
-  ↓
-Per-column water level
-  ↓
-Carving + WaterLayer update
-```
-
-**Tasks**:
-- [ ] Hydraulic erosion simulation (simplified)
-- [ ] River network coherence (tributaries)
-- [ ] Ocean termination guarantee
-- [ ] Biome-aware rivers (swamp rivers are wider)
-- [ ] River depth variation
-- [ ] Waterfall detection and rendering
-
-**Challenges**:
-- Cross-region coherence (rivers span multiple regions)
-- Performance (pathfinding to ocean is expensive)
-- Determinism (same seed = same rivers)
-
-**Current Status**: Research phase, algorithm selection
+- Render-scale supersampling; GPU frustum culling; persistent command rings
+- Avatar shadow casting; torch in the third-person avatar hand
+- Ravines; lava pools at depth; ore veins
+- Rain splash rings; underwater overlay inside flooded caves
+- Click-to-type value entry in menu sliders; F3-style debug HUD toggle
 
 ---
 
@@ -200,34 +172,33 @@ Carving + WaterLayer update
 - [x] Simple biome system
 - [x] Basic rendering
 
-### Phase 2: Content & Quality (CURRENT 🚧)
+### Phase 2: Content & Quality (DONE ✅)
 - [x] Configurable biomes
 - [x] Structure variety
 - [x] Improved terrain (islands, oceans)
-- [ ] Performance optimization
-- [ ] Caves
-- [ ] Improved rivers
+- [x] Performance optimization (GL 4.6 multi-draw-indirect, 250-350 FPS @ r48)
+- [x] Caves (worm carvers, entrances, aquifer dams)
+- [x] Improved rivers (sea-level valleys, riverbeds)
 
-### Phase 3: Lighting & Atmosphere (NEXT 📋)
+### Phase 3: Lighting & Atmosphere (DONE ✅ except block light)
 
 **Lighting System**:
-- [ ] Minecraft-style light propagation
-- [ ] Skylight (sunlight from above)
-- [ ] Block light (torches, lava, etc.)
-- [ ] Shadow maps (optional, advanced)
+- [ ] Minecraft-style per-block light propagation (torch light is a dynamic
+      camera-centered point light instead; placed-torch blocks would need this)
+- [x] Skylight (per-column ceilings: canopy shade + true cave darkness)
+- [x] Shadow maps (3 cascades, 4096px, soft PCF) + SSAO + volumetric shafts
 
 **Atmospheric Effects**:
-- [ ] Time-of-day lighting (sun position)
-- [ ] Star field at night
-- [ ] Moon phases
-- [ ] Weather effects (rain, snow)
-- [ ] Clouds (2D billboard or 3D volumetric)
+- [x] Time-of-day lighting (full day/night sunlight cycle)
+- [x] Star field at night + moon
+- [x] Weather effects (rain, snow, wind, lightning)
+- [x] Clouds (3D slab-marched volumetric + terrain cloud shadows)
 
-**Current Status**: Not started
+**Current Status**: Shipped July 2026
 
 ---
 
-### Phase 4: Far-Field LOD (PLANNED 📋)
+### Phase 4: Far-Field LOD (DONE ✅)
 
 **Goal**: Distant Horizons–style far rendering
 
@@ -243,27 +214,28 @@ Seamless blending with near field
 ```
 
 **Tasks**:
-- [ ] LOD tile system (4×4, 16×16 block quads)
-- [ ] Heightmap mesh generation
-- [ ] Biome color sampling (no per-block textures)
-- [ ] Distance-based LOD switching
-- [ ] Atmospheric perspective (distant fog)
-- [ ] LOD chunk caching
+- [x] LOD tile system (4×4, 16×16 block quads)
+- [x] Heightmap mesh generation
+- [x] Biome color sampling (no per-block textures)
+- [x] Distance-based LOD switching
+- [x] Atmospheric perspective (distant fog)
+- [x] LOD chunk caching
 
 **Benefits**:
-- Render distance: 64+ chunks
-- Performance: Minimal overhead
+- Render distance: 16 tiles = 4km in every direction
+- Performance: Minimal overhead (arena-batched draws)
 - Immersion: See mountains from far away
 
-**Current Status**: Architecture is ready, not yet implemented
+**Current Status**: Shipped — LOD rings to 4km, atlas-derived vertex colors,
+LOD terrain casts into the far shadow cascade, dithered near-field dissolve
 
 ---
 
-### Phase 5: Gameplay (FUTURE 📋)
+### Phase 5: Gameplay (CURRENT 🚧)
 
 **Block Interaction**:
-- [ ] Block breaking (left click)
-- [ ] Block placing (right click)
+- [x] Block breaking (left click, raycast + highlight + remesh)
+- [x] Block placing (right click, hotbar palette)
 - [ ] Inventory system
 - [ ] Crafting system
 
@@ -274,22 +246,21 @@ Seamless blending with near field
 - [ ] Respawn system
 
 **Entities**:
-- [ ] Entity framework
-- [ ] Passive mobs (animals)
-- [ ] Hostile mobs
-- [ ] Entity AI
+- [x] Ambient life (fish, birds, leaves — scenery, not interactive)
+- [ ] Entity framework (interactive mobs)
+- [ ] Passive/hostile mobs + AI
 
 **Physics**:
-- [ ] Collision detection
-- [ ] Gravity
-- [ ] Jumping
-- [ ] Swimming
+- [x] Collision detection (AABB, substepped)
+- [x] Gravity + jumping
+- [x] Swimming (buoyancy, dive, bank-hop exit)
 
-**Current Status**: Not started (foundation needed first)
+**Current Status**: Block editing + physics shipped July 2026; inventory,
+survival and mobs remain
 
 ---
 
-### Phase 6: Persistence (FUTURE 📋)
+### Phase 6: Persistence (NEXT 📋 — highest priority)
 
 **World Save/Load**:
 - [ ] Region serialization (NBT or custom format)

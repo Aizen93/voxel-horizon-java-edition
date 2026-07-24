@@ -6,19 +6,20 @@ Welcome to the **Voxel Horizon Java Edition** project wiki! This is a comprehens
 
 **Voxel Horizon** is a voxel-based game engine designed with clean architecture principles from day one. The engine features:
 
-- ✅ **Infinite world coordinates** with region-based streaming
-- ✅ **Deterministic generation** (seed + coordinates only)
-- ✅ **Production-grade architecture** with strict separation of concerns
-- ✅ **Configurable biome system** with JSON-based content definition
-- ✅ **Advanced terrain generation** with islands, oceans, mountains, and coastlines
-- ✅ **Multi-pass rendering** with greedy meshing optimization
-- ✅ **Far-field LOD ready** architecture (Distant Horizons style)
-- ✅ **Future UE5 compatible** (engine-agnostic world data)
+- ✅ **Infinite world** with region-based streaming and deterministic generation (seed + coordinates only)
+- ✅ **9 biomes**, rivers, oceans, mountain ranges — plus **classic worm-carver caves** with surface and underwater entrances
+- ✅ **Modern GL 4.6 renderer**: multi-draw-indirect mesh arenas (single-digit draw calls/frame), HDR + TAA + SSAO + bloom, 3× 4096px soft-shadow cascades, volumetric sun shafts, SSR water with refraction/caustics
+- ✅ **Far-field LOD** rings out to 4km (Distant Horizons style)
+- ✅ **Day/night cycle, weather** (rain/snow fronts, wind, lightning) and **ambient life** (3D fish, bird flocks, falling leaves)
+- ✅ **Playable characters**: physics (gravity, jumping, swimming), third-person avatars (human/elf), handheld torch
+- ✅ **Block breaking/placing** with hotbar, and a mouse-driven pause menu with live-tunable settings
+- ✅ **Engine-agnostic world data** (core module has zero rendering code)
 
 ## Quick Links
 
 ### For Developers
 - **[Architecture](Architecture.md)** - System design, modules, and clean architecture principles
+- **[Rendering Deep-Dive](Rendering-Deep-Dive.md)** - Frame anatomy, MDI arenas, lighting, water, post stack
 - **[Interfaces](Interfaces.md)** - Core interfaces and their contracts
 - **[Implementation](Implementation.md)** - Detailed implementation guide
 - **[Technical Reference](Technical-Reference.md)** - Data structures, constants, and coordinate systems
@@ -45,7 +46,7 @@ This engine is built as a **data-pipeline + streaming system**, not a fixed worl
 ## Technology Stack
 
 - **Language**: Java 21
-- **Graphics**: LWJGL 3 (OpenGL 3.3+)
+- **Graphics**: LWJGL 3 (OpenGL 4.6 core)
 - **Build System**: Gradle with Kotlin DSL
 - **Noise Library**: FastNoiseLite (OpenSimplex2)
 - **Math Library**: JOML (Java OpenGL Math Library)
@@ -65,15 +66,19 @@ voxel-horizon-java-edition/
 The engine is in **active development** with a stable foundation:
 
 - ✅ **Core architecture** - Complete and production-ready
-- ✅ **Terrain generation** - Configurable, multi-biome system
-- ✅ **Rendering pipeline** - Greedy meshing, 3-pass rendering, frustum culling
-- ✅ **Streaming system** - Thread-safe region caching with deduplication
-- 🚧 **Advanced features** - Caves, improved rivers, lighting (in progress)
-- 📋 **Future work** - Far-field LOD, save/load, physics
+- ✅ **Terrain generation** - Configurable multi-biome system, rivers, caves
+- ✅ **Rendering** - GL 4.6 multi-draw-indirect, HDR post stack (TAA/SSAO/bloom/volumetrics), cascaded soft shadows, LOD to 4km
+- ✅ **Streaming** - Thread-safe region caching; 250-350 FPS at 48-chunk radius
+- ✅ **Gameplay** - Physics + swimming, block edit with session persistence, hotbar, pause menu, day/night + weather + ambient life
+- 📋 **Future work** - World save/load, audio, crafting/inventory, mobs
 
 ## Screenshots
 
-*Note: Add screenshots showing the terrain, biomes, and rendering quality*
+![World vista — lake basin, beaches and snow-capped range at radius 32](images/world-vista.png)
+
+![Sylwen the Elf Ranger on the lakeshore (third-person front view)](images/elf-ranger.png)
+
+![The ESC pause menu: live-tunable settings over the running world](images/pause-menu.png)
 
 ## Community
 
@@ -82,9 +87,10 @@ The engine is in **active development** with a stable foundation:
 
 ## License
 
-*Add license information here*
+**MIT** — free and open source; use, modify and redistribute as you like
+(see the [LICENSE](https://github.com/Aizen93/voxel-horizon-java-edition/blob/main/LICENSE) file).
 
 ---
 
-**Last Updated**: 2026-01-26  
-**Version**: Terrain-Generation-Configurable Branch
+**Last Updated**: 2026-07-08  
+**Version**: feature/unreal-engine branch

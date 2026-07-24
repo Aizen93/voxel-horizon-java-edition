@@ -35,6 +35,8 @@ public final class CameraController {
 
     public float moveSpeed = 25f;
     public float mouseSensitivity = 0.0025f;
+    /** False while the pause menu owns input (mouse look ignores movement). */
+    public boolean inputEnabled = true;
 
     private boolean f9WasDown = false;
     private boolean f10WasDown = false;
@@ -64,6 +66,7 @@ public final class CameraController {
         glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
 
         glfwSetCursorPosCallback(window, (w, xpos, ypos) -> {
+            if (!inputEnabled) return;
             if (firstMouse) {
                 lastX = xpos;
                 lastY = ypos;
@@ -93,10 +96,13 @@ public final class CameraController {
         return physicsOn;
     }
 
+    /** Re-arm the mouse-look origin (call after regaining cursor capture). */
+    public void resetMouseLook() {
+        firstMouse = true;
+    }
+
     public void update(float dt) {
-        if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS) {
-            glfwSetWindowShouldClose(window, true);
-        }
+        // (ESC is handled by the pause menu in the renderer loop)
 
         // G: toggle physics (fly <-> walk)
         boolean gDown = glfwGetKey(window, GLFW_KEY_G) == GLFW_PRESS;

@@ -20,7 +20,7 @@ This guide will help you build, run, and start exploring Voxel Horizon Java Edit
 **Minimum**:
 - **OS**: Windows 10, macOS 11+, or Linux (Ubuntu 20.04+)
 - **CPU**: Dual-core 2.0+ GHz
-- **GPU**: OpenGL 3.3+ compatible
+- **GPU**: OpenGL 4.6 compatible (any discrete GPU from ~2015 on)
 - **RAM**: 2GB available
 - **Disk**: 500MB free space
 
@@ -56,7 +56,7 @@ cd voxel-horizon-java-edition
 
 ```bash
 # For the latest configurable terrain features
-git checkout terrain-generation-configurable
+git checkout feature/unreal-engine
 ```
 
 ### Step 3: Build the Project
@@ -106,7 +106,7 @@ ls build/libs/
 **Run the 2D biome viewer**:
 
 ```bash
-./gradlew runViewer
+./gradlew runBiomeViewer
 ```
 
 ### Method 2: Using JAR (After Building)
@@ -131,7 +131,7 @@ java -jar build/libs/voxel-horizon-java-edition-1.0-SNAPSHOT.jar
 1. **Window opens**: 1280×720 default resolution
 2. **World generation begins**: Chunks load around spawn point
 3. **You spawn at**: Coordinates near (0, surface_height, 0)
-4. **Camera**: Free-flight mode (no gravity)
+4. **Camera**: Free-flight mode (press G for walking physics)
 
 ### Initial Spawn
 
@@ -145,18 +145,28 @@ java -jar build/libs/voxel-horizon-java-edition-1.0-SNAPSHOT.jar
 
 ### Movement
 
-| Input | Action | Speed |
-|-------|--------|-------|
-| **W** | Move forward | 20 blocks/sec |
-| **S** | Move backward | 20 blocks/sec |
-| **A** | Strafe left | 20 blocks/sec |
-| **D** | Strafe right | 20 blocks/sec |
-| **Space** | Move up (fly) | 20 blocks/sec |
-| **Left Shift** | Move down (fly) | 20 blocks/sec |
+| Input | Action |
+|-------|--------|
+| **W / A / S / D** | Move |
+| **Space** | Jump (walk mode) / swim up / ascend (fly) |
+| **Left Ctrl** | Dive (water) / descend (fly) |
+| **Left Shift** | Sprint / fly speed boost |
+| **G** | Toggle physics (walk+gravity+swim) vs free fly (no collision) |
+| **Mouse** | Look around |
 
-**Mouse**:
-- **Move mouse**: Look around (free camera)
-- **Sensitivity**: Adjustable in code (default: 0.1)
+### Blocks & UI
+
+| Input | Action |
+|-------|--------|
+| **LMB / RMB** | Break / place blocks (6-block reach, wireframe highlight) |
+| **1–9, scroll** | Hotbar selection |
+| **ESC** | Pause menu — mouse-driven sliders for live settings, Quit |
+| **F5** | First person / third person (back) / third person (front) |
+| **C** | Switch avatar (human / elf) |
+| **T / H** | Torch light on-off / show-hide torch model |
+| **F2** | Screenshot to `./screenshots` |
+
+**Mouse sensitivity** and fly speed are adjustable live in the ESC menu.
 
 ### Teleportation
 
@@ -185,9 +195,9 @@ java -jar build/libs/voxel-horizon-java-edition-1.0-SNAPSHOT.jar
 
 ### Camera
 
-- **FOV**: 70° (default)
+- **FOV**: 75° (default)
 - **Near plane**: 0.1 blocks
-- **Far plane**: 1000 blocks (with fog)
+- **Far plane**: 8000 blocks (LOD horizon + fog)
 
 ---
 
@@ -197,49 +207,35 @@ java -jar build/libs/voxel-horizon-java-edition-1.0-SNAPSHOT.jar
 
 **In code** (before building):
 
-Edit `src/main/java/org/aouessar/app/Main.java`:
+Edit `src/main/java/org/aouessar/shared/EngineConfig.java`:
 
 ```java
-// Find this line:
-long seed = 12345L;
-
-// Change to your desired seed:
-long seed = 9876543210L;
+// Single source of truth for the world seed (Main and the 2D
+// biome viewer both derive from it):
+public static final long WORLD_SEED = 905282311L;
 ```
 
 Rebuild and run.
 
 ### Adjusting Performance
 
-**View Distance** (chunks rendered):
+**View Distance** (near-field chunks, no rebuild needed):
 
-Edit `src/main/java/org/aouessar/renderer/RendererConfig.java`:
-
-```java
-// Default
-public static final int VIEW_DISTANCE_CHUNKS = 16;
-
-// For better performance (reduce):
-public static final int VIEW_DISTANCE_CHUNKS = 8;
-
-// For higher quality (increase, may lag):
-public static final int VIEW_DISTANCE_CHUNKS = 32;
+```bash
+# Default is 48; lower = faster generation/less memory
+./gradlew run -Pvoxel.radius=16
 ```
 
-**Cache Size** (memory usage):
+The far-field LOD always extends ~4km regardless of the near radius.
 
-Edit `src/main/java/org/aouessar/core/stream/RegionStreamingService.java`:
+**Cache / memory**: regions, chunks and meshes evict automatically outside
+the view radius — memory scales with `voxel.radius` (roughly 1-5GB heap at
+radius 16, up to ~10GB at radius 48). Give the JVM headroom with
+`org.gradle.jvmargs` or run the jar with `-Xmx12g` for radius 48.
 
-```java
-// Region cache (default: 512 regions = ~250MB)
-.maximumSize(512)
-
-// Reduce for low memory:
-.maximumSize(256)
-
-// Increase for large exploration:
-.maximumSize(1024)
-```
+**Live graphics tuning**: most quality knobs (SSAO, sun shafts, bloom,
+shadows, clouds...) are adjustable in-game in the ESC menu — see the
+[Configuration Guide](Configuration-Guide.md#runtime-properties--live-settings-july-2026).
 
 **Thread Count** (CPU usage):
 
@@ -301,14 +297,13 @@ Rebuild and run to see changes.
 - Search for "DESERT"
 - Look for cactus clusters
 
-### Recommended Starting Seeds
+### World Seed Notes
 
-| Seed | Description |
-|------|-------------|
-| `12345` | Default, balanced terrain, variety of biomes nearby |
-| `42` | Large continents, few islands, massive oceans |
-| `123456789` | Archipelago world, many small islands |
-| `0` | Extreme mountains, deep valleys |
+The default seed `905282311` spawns near a lake basin with hills,
+beaches, a snow-capped range to the north-east and cave entrances
+within a short flight (probe-verified: meadow holes around (40, -440),
+mountainside mouths near (-504, -307), flooded ocean entrances east).
+Any seed works — generation is fully deterministic per seed.
 
 ---
 
@@ -336,7 +331,7 @@ Rebuild and run to see changes.
 
 **Solution**:
 - Update graphics drivers
-- Check GPU supports OpenGL 3.3+
+- Check GPU supports OpenGL 4.6 (driver up to date)
 - Try on different GPU if you have multiple (dedicated vs. integrated)
 
 **Error**: `No compatible OpenGL context`
@@ -394,7 +389,7 @@ Rebuild and run to see changes.
 
 **Launch**:
 ```bash
-./gradlew runViewer
+./gradlew runBiomeViewer
 ```
 
 **Controls**:

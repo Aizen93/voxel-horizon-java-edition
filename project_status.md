@@ -325,9 +325,39 @@ with the LOD already drawn underneath. Euclidean cut, so the horizon ring is cir
 - Next GPU steps (not yet built): GPU frustum culling (compute shader writes
   the indirect list), persistent-mapped command rings, render-scale
   supersampling.
-- Next candidates (not yet built): rain splash rings on surfaces, thunder
-  (needs audio), ravines, lava pools at depth, avatar shadow casting,
-  underwater god-ray tuning, cascade seam blending, TAA sharpening pass.
+**Block interaction + UI (July 2026):**
+- **Break/place blocks**: Amanatides-Woo DDA raycast from the eye (6-block
+  reach) finds the aimed block + entry face; LMB breaks (hold-repeat), RMB
+  places the hotbar block against the hit face — never inside the player
+  while physics is on. A wireframe highlight hugs the aimed block.
+- **Edits survive eviction**: `ChunkProvider.setBlock` records edits in a
+  per-chunk overlay inside `RegionStreamingService` (applied after
+  deterministic generation on every rebuild) AND mutates the live cached
+  chunk so physics/meshing see it instantly.
+- **Remeshing**: `ChunkMeshCache.invalidate(cx,cz)` closes the mesh, cancels
+  in-flight builds and purges stale upload-queue entries; edits invalidate
+  the edited chunk plus border neighbors (faces/AO/skylight cross borders).
+  The normal frustum request pass rebuilds next frame.
+- **Hotbar**: 9 slots with real atlas icons (keys 1-9 + scroll wheel),
+  crosshair, all drawn by a new immediate-mode `UiOverlay` (screen-space
+  pixel quads; NOTE: the y-flip reverses winding — cull must be off).
+- **ESC pause menu** (`PauseMenu`): a real mouse-driven UI — centered framed
+  panel over a dimmed world, two columns of Minecraft-style sliders (drag the
+  knob, green fill bar, centered label+value, -/+ fine-step buttons), toggle
+  buttons (TAA/SSAO, green when on) and Resume/Quit buttons, all with hover
+  highlights. Immediate-mode: widgets are laid out/hit-tested/drawn per frame
+  through the UiOverlay quad batch; labels centered via stb_easy_font
+  metrics. 14 sliders + 2 toggles live-tune the de-finalized config knobs
+  (day length, SSAO, sun shafts, bloom, exposure, shadows, clouds, rain,
+  torch, night brightness, walk/jump/fly speed, mouse sensitivity) — all
+  read per-frame, so changes apply instantly. ESC no longer closes the
+  window directly.
+- Scripted hooks for CI-style checks: `-Pvoxel.edittest=true` carves a notch
+  and places a pillar through the real edit path; `-Pvoxel.menutest=true`
+  opens the menu at startup.
+- Next candidates (not yet built): world persistence (edits are in-memory),
+  audio, rain splash rings, thunder, ravines, lava pools at depth, avatar
+  shadow casting, underwater god-ray tuning, cascade seam blending.
 
 ---
 

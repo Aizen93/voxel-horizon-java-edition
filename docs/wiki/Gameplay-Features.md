@@ -264,31 +264,51 @@ The world features 9 distinct biomes, each with unique characteristics:
 
 ## Controls
 
-### Movement
+### Movement & Physics
 
 | Key | Action |
 |-----|--------|
-| **W** | Move forward |
-| **S** | Move backward |
-| **A** | Strafe left |
-| **D** | Strafe right |
-| **Space** | Move up (fly mode) |
-| **Shift** | Move down (fly mode) |
-| **Mouse** | Look around (free camera) |
+| **W / A / S / D** | Move (walk or fly) |
+| **Space** | Jump (walk) / swim up (water) / ascend (fly) |
+| **Left Ctrl** | Dive (water) / descend (fly) |
+| **Left Shift** | Sprint (walk) / speed boost (fly) |
+| **G** | Toggle physics: walking+gravity+swimming vs free fly (no collision) |
+| **Mouse** | Look around |
 
-### Camera
+Swimming engages automatically when your feet are in water (buoyancy,
+belly-flop damping, bank-hop exit assist). Physics freezes safely while the
+chunk under you is still streaming in.
+
+### Block Interaction
+
+| Input | Action |
+|-------|--------|
+| **Left Mouse** | Break the aimed block (hold to dig) |
+| **Right Mouse** | Place the selected block against the aimed face |
+| **1–9** | Select hotbar slot |
+| **Scroll wheel** | Cycle hotbar selection |
+
+A wireframe highlight marks the aimed block (6-block reach). Edits survive
+chunk eviction within the session; placement never traps you inside a block
+while physics is on.
+
+### View, Character & Torch
 
 | Key | Action |
 |-----|--------|
-| **Mouse Move** | Rotate camera |
-| **Scroll** | Adjust FOV (future) |
+| **F5** | Cycle view: first person → third person (back) → third person (front) |
+| **C** | Switch character: Aldric the Wanderer (human) ↔ Sylwen the Elf Ranger |
+| **T** | Toggle the handheld torch light (warm point light, flickers) |
+| **H** | Show/hide the held torch model |
 
-### World Navigation
+### Menu & Tools
 
 | Key | Action |
 |-----|--------|
-| **F9** | Open "Teleport to Coordinates" dialog |
-| **F10** | Open "Search & Teleport to Biome" dialog |
+| **ESC** | Pause menu: mouse-driven sliders/toggles for live settings, Resume/Quit |
+| **F2** | Screenshot to `./screenshots` |
+| **F9** | "Teleport to Coordinates" dialog |
+| **F10** | "Search & Teleport to Biome" dialog |
 
 **F9 - Teleport to Coordinates**:
 - Enter X, Z coordinates
@@ -316,47 +336,54 @@ The world features 9 distinct biomes, each with unique characteristics:
 
 ## Visual Features
 
-### Rendering
+### Rendering (OpenGL 4.6)
 
-**Greedy Meshing**:
-- Optimized geometry (fewer polygons)
-- Merges adjacent same-block faces into larger quads
-- Reduces GPU load by ~70%
+**Greedy Meshing** with per-vertex AO + skylight (canopy shade and true cave
+darkness down to 0.12 under solid rock).
 
-**Frustum Culling**:
-- Only renders chunks in view
-- Distance-based LOD (future)
+**Multi-Draw-Indirect Arenas**: all chunk and LOD meshes live in a few large
+shared GPU buffers; each pass issues ONE `glMultiDrawElementsIndirect` per
+arena — single-digit draw calls per frame regardless of view radius.
 
-**3-Pass Rendering**:
-1. Opaque pass (depth write ON)
-2. Cutout pass (alpha discard)
-3. Translucent pass (blending, back-to-front)
+**HDR Post Pipeline**: 4x MSAA RGBA16F scene → TAA (Halton-jittered
+projection, depth reprojection, neighborhood clamp) → SSAO (depth-derived
+contact shadows) → bloom → god rays → volumetric sun shafts (a real ray
+march through the shadow cascades: crepuscular rays behind trees, ridges and
+cave mouths) → ACES filmic tonemap.
+
+**Shadows**: 3 cascaded 4096px shadow maps out to 1300 blocks (LOD terrain
+casts into the far cascade); the near cascade uses adaptive soft PCF
+(PCSS-style penumbras — sharp at contact, softer with distance).
+
+**Water v3**: screen-space refraction, Beer's-law absorption, SSR
+reflections, shore foam, sun glitter, underwater fog/caustics/Snell's
+window — and cave-aware lighting (no sky reflections underground).
 
 ### Lighting & Atmosphere
 
-**Sky Rendering**:
-- Gradient sky dome
-- Day/night cycle (visual only, no gameplay effect yet)
-- Horizon color blending
+- **Full day/night cycle**: white noon → orange sunset → blue moonlit night
+  (readable, tunable floor) → sunrise; moon disc + twinkling stars.
+- **Weather**: seed-scheduled rain fronts (snow in cold biomes) with ramping
+  intensity, drifting wind, storm overcast that dims fog/light/sky/clouds,
+  and lightning (whole-sky flash + jagged HDR bolt).
+- **Ambient life**: 3D fish (5 species, varied sizes) wandering real water
+  columns, bird flocks (crow/gull/sparrow, articulated flapping wings +
+  glides) on fair days, leaves shedding from real tree canopies in tumbling
+  pendulum arcs, wind-slanted rain that never falls indoors.
+- **Handheld torch**: warm flickering point light + HDR flame viewmodel.
 
-**Fog**:
-- Distance fog for depth perception
-- Color changes with time of day
-- Adjustable density
+### Player & Camera
 
-**Water Rendering**:
-- Lowered surface (0.85 height) for wave effect
-- Per-cell rendering (not greedy merged on top)
-- Translucent with blending
-- Future: Reflections, ripples
+- **Two playable avatars** (procedural voxel models, walk/swim animation,
+  camera-tracking head): Aldric the Wanderer and Sylwen the Elf Ranger.
+- **Minecraft-style F5 camera** with terrain-aware orbit distance.
+- **Character physics**: 0.6×1.8 AABB, gravity, jumping, swimming.
 
 ### Textures
 
-**Atlas System**:
-- Minecraft-style texture atlas (256×256)
-- 16×16 pixel tiles
-- Per-face texturing (e.g., grass has different top/side)
-- Efficient GPU batching
+**Atlas System**: Minecraft-style texture atlas, 16×16 tiles, per-face
+texturing, shared by the world, the far-field LOD vertex colors and the
+hotbar icons.
 
 ---
 
@@ -364,24 +391,24 @@ The world features 9 distinct biomes, each with unique characteristics:
 
 ### Exploration
 
-✅ **Free flight**: WASD + Space/Shift navigation  
-✅ **Infinite world**: Explore without boundaries  
-✅ **Biome diversity**: 9 distinct biomes to discover  
-✅ **Fast travel**: Teleport to coordinates or biomes  
+✅ **Walk or fly**: full character physics (gravity, jumping, swimming) or free flight, toggled with G  
+✅ **Infinite world**: region streaming, view radius up to 48+ chunks at 250-350 FPS  
+✅ **Caves**: classic worm-carver systems with surface/underwater entrances and aquifer-sealed flooded sections — explore them by torchlight  
+✅ **Fast travel**: teleport to coordinates or biomes  
 
 ### World Interaction
 
-⏳ **Block breaking**: Not yet implemented  
-⏳ **Block placing**: Not yet implemented  
-⏳ **Crafting**: Not yet implemented  
-⏳ **Inventory**: Not yet implemented  
+✅ **Block breaking**: LMB with raycast targeting + wireframe highlight, hold to dig  
+✅ **Block placing**: RMB against the aimed face, 9-block hotbar palette  
+✅ **Edits persist across chunk reloads** (within the session; disk saves planned)  
+✅ **Live settings**: ESC menu tunes 16 graphics/gameplay values instantly  
+⏳ **Crafting / inventory**: not yet implemented (hotbar palette is creative-style)  
 
 ### Survival Elements
 
-⏳ **Health**: Not yet implemented  
-⏳ **Hunger**: Not yet implemented  
-⏳ **Day/night cycle gameplay**: Visual only, no mobs yet  
-⏳ **Weather**: Not yet implemented  
+⏳ **Health / hunger**: not yet implemented  
+✅ **Day/night + weather**: full visual cycle with storms, snow, lightning  
+⏳ **Mobs**: ambient life only (fish, birds) — no hostile/interactive mobs yet  
 
 ---
 
@@ -393,22 +420,26 @@ The world features 9 distinct biomes, each with unique characteristics:
 - **RAM**: 4GB+ (8GB recommended)
 - **Java**: Java 21 or higher
 
-**Typical Performance** (Mid-range hardware):
-- **FPS**: 60-144 (uncapped)
-- **View distance**: 16-32 chunks
-- **Chunk generation**: Real-time, async
-- **Memory usage**: 500MB - 2GB (depends on exploration)
+**Typical Performance** (measured, RTX-class GPU at 720p):
+- **FPS**: 250-350 at radius 48 (9,400+ chunk meshes resident), 400-1200 at radius 16
+- **Draw calls**: single digits per frame (multi-draw-indirect arenas)
+- **Chunk generation**: real-time, async (worker threads)
+- **Memory usage**: ~1-5GB heap at radius 16, up to ~10GB at radius 48
+
+Requires an **OpenGL 4.6** capable GPU (any discrete GPU from the last decade).
 
 ---
 
 ## Known Limitations
 
-- No block modification (creative/survival not implemented)
-- No mobs or entities
-- No lighting system (beyond ambient)
-- No physics (beyond collision detection, future)
-- Water is static (no flow simulation)
-- No sound effects or music
+- Block edits are in-memory only (no save/load yet — lost on exit)
+- Water is static (no flow simulation; generation guarantees hydrostatic
+  plausibility via aquifer dams instead)
+- No sound effects or music (no audio system yet)
+- No crafting/inventory/survival systems (creative-style hotbar only)
+- Avatar casts no shadow; ambient creatures are scenery, not interactive
+- World-generation constants can't change at runtime (would seam against
+  already-generated regions)
 
 ---
 

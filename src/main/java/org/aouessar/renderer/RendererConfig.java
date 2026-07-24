@@ -26,7 +26,7 @@ public final class RendererConfig {
     public static final float FOG_RANGE_HIGH = 3400f; //2200f pre-LOD
 
     // Fog cycle --> Weather
-    public static final float DAY_LENGTH_SECONDS = 300f;
+    public static float DAY_LENGTH_SECONDS = 300f;
     public static final float SUNRISE_SUNSET_WIDTH = 0.25f;
     public static final float FOG_TWILIGHT_GLOW = 0.30f;   // try 0.15..0.45
     public static final float SKY_TWILIGHT_BOOST = 0.45f;
@@ -58,14 +58,14 @@ public final class RendererConfig {
 
     // Day/night terrain lighting (multiplies all world shading)
     /** Light level at deep night (0 = pitch black, 1 = full day). */
-    public static final float NIGHT_LIGHT_FLOOR = 0.18f;
+    public static float NIGHT_LIGHT_FLOOR = 0.18f;
     /** How strongly sunrise/sunset tint the terrain orange (0..1). */
     public static final float TWILIGHT_SUNLIGHT_TINT = 0.55f;
 
     // Clouds (volumetric slab in the sky shader + drifting terrain shadows)
-    public static final float CLOUD_COVER = 0.55f;          // 0 = clear, 1 = overcast
+    public static float CLOUD_COVER = 0.55f;          // 0 = clear, 1 = overcast
     public static final float CLOUD_HEIGHT = 460f;          // render-space Y of the deck
-    public static final float CLOUD_SHADOW_STRENGTH = 0.4f; // terrain darkening under clouds
+    public static float CLOUD_SHADOW_STRENGTH = 0.4f; // terrain darkening under clouds
 
     // Camera planes (shared by projection + water depth linearization)
     public static final float CAMERA_NEAR = 0.1f;
@@ -74,27 +74,27 @@ public final class RendererConfig {
     //----------------------------------
     // HDR post-processing
     //----------------------------------
-    public static final float POST_EXPOSURE = 1.6f;    // pre-tonemap exposure
+    public static float POST_EXPOSURE = 1.6f;    // pre-tonemap exposure
     public static final float BLOOM_THRESHOLD = 1.0f;  // HDR luma where bloom starts
-    public static final float BLOOM_STRENGTH = 0.55f;
-    public static final float GODRAY_STRENGTH = 0.5f;
+    public static float BLOOM_STRENGTH = 0.55f;
+    public static float GODRAY_STRENGTH = 0.5f;
 
     // Temporal antialiasing: subpixel-jittered projection + history blend.
     // TAA_BLEND is the share of the CURRENT frame (lower = smoother/softer).
     // Overridable per run with -Pvoxel.taa=false (debugging).
-    public static final boolean TAA_ENABLED =
+    public static boolean TAA_ENABLED =
             Boolean.parseBoolean(System.getProperty("voxel.taa", "true"));
     public static final float TAA_BLEND = 0.12f;
 
     // Volumetric sun shafts: shadow-map ray march (crepuscular rays)
-    public static final boolean VOLUMETRIC_ENABLED = true;
-    public static final float VOLUMETRIC_STRENGTH = 0.45f;
+    public static boolean VOLUMETRIC_ENABLED = true;
+    public static float VOLUMETRIC_STRENGTH = 0.45f;
     public static final String POST_VOL_FRAG = "/shaders/post_volumetric.frag";
 
     // SSAO: depth-derived contact shadows (caves, forest floors, block seams)
-    public static final boolean SSAO_ENABLED = true;
-    public static final float SSAO_RADIUS = 1.4f;
-    public static final float SSAO_STRENGTH = 0.62f;
+    public static boolean SSAO_ENABLED = true;
+    public static float SSAO_RADIUS = 1.4f;
+    public static float SSAO_STRENGTH = 0.62f;
     public static final String POST_SSAO_FRAG = "/shaders/post_ssao.frag";
 
     public static final String POST_VERT = "/shaders/post_fullscreen.vert";
@@ -112,9 +112,9 @@ public final class RendererConfig {
     /** Max fall speed, blocks/s. */
     public static final float PLAYER_TERMINAL_VELOCITY = 55f;
     /** Initial jump velocity: clears just over 1.25 blocks. */
-    public static final float PLAYER_JUMP_VELOCITY = 8.6f;
+    public static float PLAYER_JUMP_VELOCITY = 8.6f;
     /** Ground speed, blocks/s (shift sprints). */
-    public static final float PLAYER_WALK_SPEED = 4.3f;
+    public static float PLAYER_WALK_SPEED = 4.3f;
     public static final float PLAYER_SPRINT_MULT = 1.6f;
     /** Player collision box: 0.6 x 1.8 blocks, eyes near the top. */
     public static final float PLAYER_HALF_WIDTH = 0.3f;
@@ -135,7 +135,7 @@ public final class RendererConfig {
     /** Weather schedule slot length; each slot rolls for rain. */
     public static final float WEATHER_SLOT_SECONDS = 45f;
     /** Chance a slot is rainy (storms last one or more slots). */
-    public static final float WEATHER_RAIN_CHANCE = 0.30f;
+    public static float WEATHER_RAIN_CHANCE = 0.30f;
     /** Seconds for rain to ramp in/out. */
     public static final float WEATHER_RAMP_SECONDS = 6f;
 
@@ -169,13 +169,13 @@ public final class RendererConfig {
     // Handheld torch (cave exploration)
     //----------------------------------
     /** How far the torch light reaches (blocks). */
-    public static final float TORCH_RANGE_BLOCKS = 28f;
+    public static float TORCH_RANGE_BLOCKS = 28f;
     /** Warm flame color. */
     public static final float TORCH_R = 1.00f;
     public static final float TORCH_G = 0.72f;
     public static final float TORCH_B = 0.42f;
     /** Light intensity at the torch (multiplies albedo, HDR). */
-    public static final float TORCH_INTENSITY = 1.15f;
+    public static float TORCH_INTENSITY = 1.15f;
 
     public static final String TORCH_HAND_VERT = "/shaders/torch_hand.vert";
     public static final String TORCH_HAND_FRAG = "/shaders/torch_hand.frag";
@@ -271,7 +271,7 @@ public final class RendererConfig {
     public static final float[] SHADOW_CASCADE_EXTENTS = {130f, 420f, 1300f};
 
     /** Max darkening from shadows (0..1). */
-    public static final float SHADOW_STRENGTH = 0.85f;
+    public static float SHADOW_STRENGTH = 0.85f;
 
     public static final String SHADOW_VERT = "/shaders/shadow_depth.vert";
     public static final String SHADOW_FRAG = "/shaders/shadow_depth.frag";

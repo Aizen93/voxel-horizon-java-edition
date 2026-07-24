@@ -195,6 +195,10 @@ public final class LwjglRendererV1 {
                         new org.aouessar.renderer.world.PlayerModel();
                 org.aouessar.renderer.world.AmbientEffects ambient =
                         new org.aouessar.renderer.world.AmbientEffects(world);
+                org.aouessar.renderer.world.BlockHighlight blockHighlight =
+                        new org.aouessar.renderer.world.BlockHighlight();
+                org.aouessar.renderer.ui.UiOverlay uiOverlay =
+                        new org.aouessar.renderer.ui.UiOverlay(atlas, brm);
 
                 // Shared mesh arena: all near-field chunk meshes live in a few
                 // large buffers; each pass flushes as one multi-draw-indirect.
@@ -260,6 +264,49 @@ public final class LwjglRendererV1 {
             Camera camera = new Camera();
             CameraController controller = new CameraController(camera, window, world);
             GreedyChunkMesher mesher = new GreedyChunkMesher();
+            final boolean[] menuCloseRequest = {false};
+
+            // Block interaction: break/place with mesh invalidation + hotbar
+            BlockInteraction interaction = new BlockInteraction(
+                    world, camera, window, opaqueCache, cutoutCache, translucentCache);
+
+            // ESC pause menu: mouse-driven sliders/toggles wired to the
+            // mutable config knobs (all read per frame -> instant effect)
+            org.aouessar.renderer.ui.PauseMenu menu = new org.aouessar.renderer.ui.PauseMenu();
+            menu.slider("Day length", () -> RendererConfig.DAY_LENGTH_SECONDS,
+                    v -> RendererConfig.DAY_LENGTH_SECONDS = v, 60f, 1200f, 30f, "%.0fs");
+            menu.slider("SSAO strength", () -> RendererConfig.SSAO_STRENGTH,
+                    v -> RendererConfig.SSAO_STRENGTH = v, 0f, 1.5f, 0.05f, "%.2f");
+            menu.slider("Sun shafts", () -> RendererConfig.VOLUMETRIC_STRENGTH,
+                    v -> RendererConfig.VOLUMETRIC_STRENGTH = v, 0f, 1.5f, 0.05f, "%.2f");
+            menu.slider("Bloom", () -> RendererConfig.BLOOM_STRENGTH,
+                    v -> RendererConfig.BLOOM_STRENGTH = v, 0f, 2f, 0.05f, "%.2f");
+            menu.slider("Exposure", () -> RendererConfig.POST_EXPOSURE,
+                    v -> RendererConfig.POST_EXPOSURE = v, 0.4f, 4f, 0.1f, "%.2f");
+            menu.slider("Shadow strength", () -> RendererConfig.SHADOW_STRENGTH,
+                    v -> RendererConfig.SHADOW_STRENGTH = v, 0f, 1f, 0.05f, "%.2f");
+            menu.slider("Cloud cover", () -> RendererConfig.CLOUD_COVER,
+                    v -> RendererConfig.CLOUD_COVER = v, 0f, 0.95f, 0.05f, "%.2f");
+            menu.slider("Rain chance", () -> RendererConfig.WEATHER_RAIN_CHANCE,
+                    v -> RendererConfig.WEATHER_RAIN_CHANCE = v, 0f, 1f, 0.05f, "%.2f");
+            menu.slider("Torch intensity", () -> RendererConfig.TORCH_INTENSITY,
+                    v -> RendererConfig.TORCH_INTENSITY = v, 0f, 3f, 0.1f, "%.2f");
+            menu.slider("Night brightness", () -> RendererConfig.NIGHT_LIGHT_FLOOR,
+                    v -> RendererConfig.NIGHT_LIGHT_FLOOR = v, 0.02f, 0.6f, 0.02f, "%.2f");
+            menu.slider("Walk speed", () -> RendererConfig.PLAYER_WALK_SPEED,
+                    v -> RendererConfig.PLAYER_WALK_SPEED = v, 1f, 20f, 0.5f, "%.1f");
+            menu.slider("Jump velocity", () -> RendererConfig.PLAYER_JUMP_VELOCITY,
+                    v -> RendererConfig.PLAYER_JUMP_VELOCITY = v, 4f, 20f, 0.5f, "%.1f");
+            menu.slider("Fly speed", () -> controller.moveSpeed,
+                    v -> controller.moveSpeed = v, 5f, 200f, 5f, "%.0f");
+            menu.slider("Mouse sensitivity", () -> controller.mouseSensitivity,
+                    v -> controller.mouseSensitivity = v, 0.0005f, 0.01f, 0.0005f, "%.4f");
+            menu.toggle("TAA", () -> RendererConfig.TAA_ENABLED,
+                    v -> RendererConfig.TAA_ENABLED = v);
+            menu.toggle("SSAO", () -> RendererConfig.SSAO_ENABLED,
+                    v -> RendererConfig.SSAO_ENABLED = v);
+            menu.action("Resume", () -> menuCloseRequest[0] = true);
+            menu.action("Quit", () -> glfwSetWindowShouldClose(window, true));
 
             // Optional startup view/avatar: -Dvoxel.view=first|back|front, -Dvoxel.character=elf
             switch (System.getProperty("voxel.view", "first").toLowerCase()) {
@@ -294,6 +341,15 @@ public final class LwjglRendererV1 {
                     ? glfwGetTime() + autoshotPeriod : Double.MAX_VALUE;
             int autoshotIndex = 0;
             boolean f2Down = false;
+            boolean escDown = false;
+
+            // Scripted verification hooks
+            final boolean editTest = Boolean.getBoolean("voxel.edittest");
+            boolean editTestDone = false;
+            if (Boolean.getBoolean("voxel.menutest")) {
+                menu.open = true;
+                glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+            }
 
             // Handheld torch: T toggles the light, H hides/shows the model
             boolean torchOn = true;
@@ -314,7 +370,41 @@ public final class LwjglRendererV1 {
                 lastTime = now;
 
                 glfwPollEvents();
-                controller.update(dt);
+
+                // ESC toggles the pause menu (mouse capture follows)
+                boolean escKey = glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS;
+                if ((escKey && !escDown) || menuCloseRequest[0]) {
+                    if (!menuCloseRequest[0]) menu.open = !menu.open;
+                    else menu.open = false;
+                    menuCloseRequest[0] = false;
+                    glfwSetInputMode(window, GLFW_CURSOR,
+                            menu.open ? GLFW_CURSOR_NORMAL : GLFW_CURSOR_DISABLED);
+                    if (!menu.open) controller.resetMouseLook();
+                }
+                escDown = escKey;
+
+                // Scripted edit test: carve a notch + raise a pillar ahead
+                if (editTest && !editTestDone && now > 6) {
+                    editTestDone = true;
+                    Vector3f f = camera.forwardDir();
+                    int bx0 = (int) java.lang.Math.floor(camera.position.x + f.x * 7);
+                    int by0 = (int) java.lang.Math.floor(camera.position.y + f.y * 7);
+                    int bz0 = (int) java.lang.Math.floor(camera.position.z + f.z * 7);
+                    for (int dx = -2; dx <= 1; dx++)
+                        for (int dy = -3; dy <= 0; dy++)
+                            for (int dz = -2; dz <= 1; dz++)
+                                interaction.editBlock(bx0 + dx, by0 + dy, bz0 + dz,
+                                        org.aouessar.core.world.Blocks.AIR);
+                    for (int dy = 0; dy <= 2; dy++)
+                        interaction.editBlock(bx0 + 4, by0 + dy, bz0 + 4,
+                                org.aouessar.core.world.Blocks.STONE);
+                }
+
+                controller.inputEnabled = !menu.open;
+                if (!menu.open) {
+                    controller.update(dt);
+                    interaction.update(dt, controller.isPhysicsOn());
+                }
 
                 // -----------------------------
                 // Handheld torch state
@@ -583,6 +673,11 @@ public final class LwjglRendererV1 {
                 // later refracts and reflects them like any seabed block
                 ambient.drawWaterCritters(mvp, eyePos);
 
+                // Wireframe highlight on the aimed block
+                if (interaction.hasTarget && !menu.open) {
+                    blockHighlight.draw(mvp, interaction.tx, interaction.ty, interaction.tz);
+                }
+
                 // ---- PASS 1b: FAR-FIELD LOD TERRAIN ----
                 // Drawn after near opaque so identical-depth fragments resolve
                 // to the real chunks (LOD is also biased slightly downward).
@@ -820,6 +915,13 @@ public final class LwjglRendererV1 {
                 // -----------------------------
                 hud.render(fbW[0], fbH[0], 8f, 8f, debug.toString());
 
+                // Crosshair + hotbar (+ menu dim and widgets when paused)
+                atlasTex.bind(0);
+                uiOverlay.render(fbW[0], fbH[0], interaction, menu.open, 0);
+                if (menu.open) {
+                    menu.renderAndHandle(window, uiOverlay, hud, fbW[0], fbH[0]);
+                }
+
                 // F2: screenshot to ./screenshots (like Minecraft)
                 boolean f2 = glfwGetKey(window, GLFW_KEY_F2) == GLFW_PRESS;
                 if (f2 && !f2Down) {
@@ -871,6 +973,10 @@ public final class LwjglRendererV1 {
     }
 
     /** Shadow cascade texture units: 1 / 4 / 5. */
+    private static float clamp01(float v, float lo, float hi) {
+        return v < lo ? lo : java.lang.Math.min(v, hi);
+    }
+
     private void setupCascadeSamplers(GlShaderProgram shader) {
         shader.use();
         shader.setUniform1i("uShadowMap0", 1);

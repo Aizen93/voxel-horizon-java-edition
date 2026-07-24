@@ -148,6 +148,28 @@ public final class ChunkMeshCache implements AutoCloseable {
         });
     }
 
+    /**
+     * Render thread only. Drop a chunk's mesh so the normal request pass
+     * rebuilds it next frame (player block edits).
+     */
+    public void invalidate(int cx, int cz) {
+        Entry e = entries.get(ChunkKey.pack(cx, cz));
+        if (e == null) return;
+        IGlMesh m = e.mesh;
+        if (m != null) {
+            m.close();
+            e.mesh = null;
+        }
+        CompletableFuture<MeshData> f = e.inFlight;
+        if (f != null && !f.isDone()) f.cancel(true);
+        e.inFlight = null;
+
+        // A build finished just before the edit may sit in the upload queue:
+        // drop it so a stale mesh can't resurrect
+        long key = ChunkKey.pack(cx, cz);
+        readyQueue.removeIf(r -> r.key() == key);
+    }
+
     private int trySubmit(int cx, int cz, int submitBudget, MeshBuilder builder) {
         if (submitBudget <= 0) return 0;
         if (inFlight.get() >= maxInFlight) return submitBudget;

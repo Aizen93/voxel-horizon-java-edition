@@ -21,6 +21,11 @@ public final class RegionStreamingService implements ChunkProvider, WorldSampler
     private final ExecutorService regionExecutor;
     private final ChunkBuilder chunkBuilder;
 
+    // Player block edits: chunkKey -> (columnIndex*height+y -> blockId).
+    // Applied after deterministic generation so edits survive eviction.
+    private final ConcurrentHashMap<Long, ConcurrentHashMap<Integer, Short>> blockEdits =
+            new ConcurrentHashMap<>();
+
     // Ready regions (cache). Production-grade: you can later swap to Caffeine.
     private final ConcurrentHashMap<RegionPos, Region> ready = new ConcurrentHashMap<>();
     // In-flight region builds (dedup).
@@ -98,8 +103,51 @@ public final class RegionStreamingService implements ChunkProvider, WorldSampler
 
         // Build deterministically from region layers (no async here; async is for region generation)
         Chunk real = chunkBuilder.buildChunk(seed, region, cx, cz);
+        applyEdits(real, cx, cz);
         chunkCache.put(cp, real);
         return real;
+    }
+
+    // -----------------------
+    // Player block edits
+    // -----------------------
+
+    private static long editKey(int cx, int cz) {
+        return ((long) cx << 32) ^ (cz & 0xFFFFFFFFL);
+    }
+
+    private static int editIndex(int lx, int wy, int lz) {
+        return ((lz * EngineConfig.CHUNK_SIZE) + lx) * EngineConfig.WORLD_HEIGHT
+                + (wy - EngineConfig.MIN_Y);
+    }
+
+    @Override
+    public boolean setBlock(int wx, int wy, int wz, short id) {
+        if (wy < EngineConfig.MIN_Y || wy > EngineConfig.MAX_Y) return false;
+        int cx = Math.floorDiv(wx, EngineConfig.CHUNK_SIZE);
+        int cz = Math.floorDiv(wz, EngineConfig.CHUNK_SIZE);
+        int lx = Math.floorMod(wx, EngineConfig.CHUNK_SIZE);
+        int lz = Math.floorMod(wz, EngineConfig.CHUNK_SIZE);
+
+        blockEdits.computeIfAbsent(editKey(cx, cz), k -> new ConcurrentHashMap<>())
+                .put(editIndex(lx, wy, lz), id);
+
+        // Mutate the live chunk too so physics/meshing see it immediately
+        Chunk cached = chunkCache.get(new ChunkPos(cx, cz));
+        if (cached != null) cached.setBlock(lx, wy, lz, id);
+        return true;
+    }
+
+    private void applyEdits(Chunk chunk, int cx, int cz) {
+        var em = blockEdits.get(editKey(cx, cz));
+        if (em == null) return;
+        final int h = EngineConfig.WORLD_HEIGHT;
+        final int cs = EngineConfig.CHUNK_SIZE;
+        em.forEach((idx, id) -> {
+            int col = idx / h;
+            int wy = idx % h + EngineConfig.MIN_Y;
+            chunk.setBlock(col % cs, wy, col / cs, id);
+        });
     }
 
     // -----------------------
